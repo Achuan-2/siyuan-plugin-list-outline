@@ -30,6 +30,15 @@ export function findList(target: Element): HTMLElement | null {
     return result;
 }
 
+export function findRootLists(container: Element): HTMLElement[] {
+    const lists = Array.from(container.querySelectorAll<HTMLElement>(LIST_SELECTOR));
+    return lists.filter(list => {
+        if (list.closest(QUOTE_SELECTOR)) return false;
+        const parentList = list.parentElement?.closest(LIST_SELECTOR);
+        return !parentList || !container.contains(parentList);
+    });
+}
+
 export function extractOutline(root: HTMLElement, maxDepth: number): OutlineEntry[] {
     const entries: OutlineEntry[] = [];
     function visit(list: Element, depth: number) {
@@ -58,3 +67,32 @@ export function extractOutline(root: HTMLElement, maxDepth: number): OutlineEntr
     visit(root, 1);
     return entries;
 }
+
+export function hasChildBlocks(root: HTMLElement): boolean {
+    if (!root || !root.querySelectorAll) return false;
+    const items = Array.from(root.querySelectorAll<HTMLElement>(ITEM_SELECTOR));
+    if (!items.length) return false;
+
+    for (const item of items) {
+        // 1. 包含嵌套子列表或引述块
+        if (item.querySelector(LIST_SELECTOR) || item.querySelector(QUOTE_SELECTOR)) {
+            return true;
+        }
+        // 2. 包含代码块、超级块、表格、公式块、HTML块、嵌入块等复合子块
+        if (item.querySelector('[data-type="NodeCodeBlock"], [data-type="NodeSuperBlock"], [data-type="NodeTable"], [data-type="NodeMathBlock"], [data-type="NodeHTMLBlock"], [data-type="NodeBlockQueryEmbed"], [data-type="NodeIFrame"], [data-type="NodeWidget"], [data-type="NodeVideo"], [data-type="NodeAudio"], [data-type="NodeHeading"]')) {
+            return true;
+        }
+        // 3. 包含多个直接内容块（例如两个或更多段落）
+        const childBlocks = Array.from(item.querySelectorAll<HTMLElement>('[data-type]')).filter(el => {
+            if (el === item) return false;
+            if (el.closest(ITEM_SELECTOR) !== item) return false;
+            const type = el.getAttribute("data-type") || "";
+            return type.startsWith("Node") && type !== "NodeListItem";
+        });
+        if (childBlocks.length > 1) {
+            return true;
+        }
+    }
+    return false;
+}
+

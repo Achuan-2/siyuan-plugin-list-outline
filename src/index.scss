@@ -23,8 +23,34 @@
         border-bottom: 1px solid var(--b3-border-color);
         flex: none;
         > span { font-weight: 600; white-space: nowrap; }
-        label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+        label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; user-select: none; }
         select { max-width: 160px; min-width: 0; font-size: 12px; }
+    }
+
+    &__search {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--b3-border-color);
+        flex: none;
+
+        &-icon {
+            width: 14px;
+            height: 14px;
+            fill: var(--b3-theme-on-surface-light);
+            flex: none;
+        }
+
+        &-input {
+            flex: 1;
+            width: 100%;
+            height: 26px;
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
     }
 
     &__body { overflow: auto; min-height: 0; padding: 4px; overscroll-behavior: contain; scrollbar-width: none; }
@@ -77,6 +103,7 @@
         border-color: var(--b3-border-color);
         box-shadow: var(--b3-dialog-shadow, 0 4px 20px #0002);
         .list-outline-floating__header { display: flex; }
+        .list-outline-floating__search { display: flex; }
         .list-outline-floating__body { scrollbar-width: auto; }
         .list-outline-floating__body::-webkit-scrollbar { display: block; }
         .list-outline-floating__item {
@@ -91,6 +118,13 @@
         .list-outline-floating__status { display: block; }
     }
     &__status:empty { display: none; }
+    &__match {
+        color: var(--b3-theme-primary);
+        background: var(--b3-theme-primary-light, rgba(66, 133, 244, 0.15));
+        border-radius: 2px;
+        padding: 0 1px;
+        font-weight: 600;
+    }
     &__current { color: var(--b3-theme-primary); }
     &__current .list-outline-floating__line { background: var(--b3-theme-primary); opacity: 1; }
     &--expanded .list-outline-floating__current { background: var(--b3-list-hover); }

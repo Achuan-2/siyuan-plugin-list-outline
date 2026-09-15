@@ -1,7 +1,7 @@
 import type { OutlineEntry } from "./outline";
 
 /** 两种大纲共用线条、标题和截断样式。 */
-export function createOutlineRow(entry: OutlineEntry): HTMLButtonElement {
+export function createOutlineRow(entry: OutlineEntry, highlightKeyword?: string): HTMLButtonElement {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "list-outline-floating__item";
@@ -13,7 +13,33 @@ export function createOutlineRow(entry: OutlineEntry): HTMLButtonElement {
     line.setAttribute("aria-hidden", "true");
     const text = document.createElement("span");
     text.className = "list-outline-floating__text";
-    text.textContent = entry.text;
+    const kw = highlightKeyword?.trim();
+    if (kw) {
+        const lowerText = entry.text.toLowerCase();
+        const lowerKw = kw.toLowerCase();
+        let start = 0;
+        let index = lowerText.indexOf(lowerKw, start);
+        if (index !== -1) {
+            while (index !== -1) {
+                if (index > start) {
+                    text.append(document.createTextNode(entry.text.slice(start, index)));
+                }
+                const matchSpan = document.createElement("span");
+                matchSpan.className = "list-outline-floating__match";
+                matchSpan.textContent = entry.text.slice(index, index + kw.length);
+                text.append(matchSpan);
+                start = index + kw.length;
+                index = lowerText.indexOf(lowerKw, start);
+            }
+            if (start < entry.text.length) {
+                text.append(document.createTextNode(entry.text.slice(start)));
+            }
+        } else {
+            text.textContent = entry.text;
+        }
+    } else {
+        text.textContent = entry.text;
+    }
     row.append(line, text);
     row.title = entry.text;
     row.setAttribute("aria-label", `第 ${entry.depth} 层：${entry.text}`);

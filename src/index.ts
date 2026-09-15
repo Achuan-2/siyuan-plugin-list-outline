@@ -36,14 +36,21 @@ export default class ListOutlinePlugin extends Plugin {
     private onProtyle = (event: CustomEvent<{ protyle: IProtyle }>) => {
         this.headingOutline?.syncEditors(event.detail.protyle.element);
         if (event.type.startsWith("loaded-")) this.headingOutline?.scheduleRefresh();
+        this.outline?.scheduleSync();
     };
 
     private onWorkspaceMessage = (event: CustomEvent<{ cmd: string }>) => {
         // 原生大纲在 savedoc 后重新读取标题，兼顾同步、撤销和标题编号变更。
-        if (["savedoc", "transactions", "reload", "rename"].includes(event.detail.cmd)) this.headingOutline?.scheduleRefresh();
+        if (["savedoc", "transactions", "reload", "rename"].includes(event.detail.cmd)) {
+            this.headingOutline?.scheduleRefresh();
+            this.outline?.scheduleSync();
+        }
     };
 
-    onLayoutReady() { this.headingOutline?.syncEditors(); }
+    onLayoutReady() {
+        this.headingOutline?.syncEditors();
+        this.outline?.scheduleSync();
+    }
 
     private request = async (url: string, data: Record<string, unknown>) => {
         const response = await fetchSyncPost(url, data);
@@ -137,16 +144,23 @@ export default class ListOutlinePlugin extends Plugin {
         return !!protyle && protyle.element.isConnected && !protyle.disabled && !protyle.options?.action?.includes("cb-get-history");
     }
 
-    private openInsertMenu: OpenInsertMenu = (event, target, onInserted) => {
+    private openInsertMenu: OpenInsertMenu = (event, target, onInserted, onClose) => {
         event.preventDefault();
         event.stopPropagation();
         this.insertMenu?.close();
-        const menu = new Menu(`${this.name}-outline-insert`);
+        let closed = false;
+        const handleClose = () => {
+            if (closed) return;
+            closed = true;
+            if (this.insertMenu === menu) this.insertMenu = undefined;
+            onClose?.();
+        };
+        const menu = new Menu(`${this.name}-outline-insert`, handleClose);
         this.insertMenu = menu;
         const noun = target.kind === "heading" ? "同级标题" : "同级列表项";
         for (const direction of ["before", "after"] as const) menu.addItem({
             icon: direction === "before" ? "iconBefore" : "iconAfter",
-            label: `${direction === "before" ? "向上" : "向下"}插入${noun}`,
+            label: `${direction === "before" ? "向前" : "向后"}插入${noun}`,
             disabled: !this.canInsert(target) || this.inserting.has(target.id),
             click: async () => {
                 if (!this.canInsert(target) || this.inserting.has(target.id)) return;

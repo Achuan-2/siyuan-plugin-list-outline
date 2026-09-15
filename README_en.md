@@ -9,6 +9,9 @@ Enable “Show lists” in the heading panel or its plugin setting to include li
 A SiYuan plugin that displays compact outline lines at the upper-right corner of a hovered list. Hover over the lines to expand the labels and depth settings; move away to collapse them.
 
 - Supports ordered, unordered, task, and nested lists.
+- Outlines remain visible while lists stay in the viewport, and hide automatically when scrolled out of view.
+- Search and filter list items in real time with keyword highlighting; press Escape to clear search, and search resets automatically when collapsed.
+- Option to hide the list outline if the list has no child blocks (nested sub-lists, blockquotes, code blocks, extra paragraphs, etc.) (`listOutlineRequireChildren`).
 - Lists inside blockquotes are excluded from the outline and do not trigger a separate panel.
 - Defaults to 3 levels. Labels fit one line and overflow with an ellipsis; hover for the full text.
 - Configure global depth (1–20) in plugin settings. The character limit setting has been removed; older character limits are ignored.

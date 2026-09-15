@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import { compile } from "sass";
 import { fileURLToPath } from "node:url";
-import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, findList } from "../src/outline";
+import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, findList, hasChildBlocks } from "../src/outline";
 import { createOutlineRow } from "../src/outlineView";
 import { getDefaultSettings, normalizeSettings } from "../src/defaultSettings";
 import { ListOutlineController } from "../src/listOutline";
@@ -84,7 +84,7 @@ test("同一列表内移动保持根列表，非编辑器区域不触发", () =>
     assert.equal(findList(document.querySelector('[data-node-id="outside-item"]')!), null);
 });
 
-function setup(request?: (url: string, data: any) => Promise<any>) {
+function setup(request?: (url: string, data: any) => Promise<any>, getSettings?: () => any) {
     const dom = new JSDOM(`<div class="protyle-content"><div class="protyle-wysiwyg">${nested}${list("other", item("other-item", "另一列表"))}</div></div>`, { pretendToBeVisual: true });
     const win = dom.window;
     const style = win.document.createElement("style");
@@ -104,7 +104,7 @@ function setup(request?: (url: string, data: any) => Promise<any>) {
     const errors: string[] = [];
     const menus: any[] = [];
     const controller = new ListOutlineController({
-        getSettings: () => ({ ...getDefaultSettings(), enableHeadingOutline: false, defaultDepth: 3 }),
+        getSettings: getSettings || (() => ({ ...getDefaultSettings(), enableHeadingOutline: false, defaultDepth: 3 })),
         request: request || (async (url, data) => {
             if (url.endsWith("setBlockAttrs")) { writes.push(data); return null; }
             if (url.endsWith("getBlockAttrs")) return {};
@@ -144,7 +144,7 @@ test("悬浮显示、独立层级保存及清除，卸载移除面板与监听",
     } finally { env.cleanup(); }
 });
 
-test("快速切换列表时旧请求不能覆盖新面板", async () => {
+test("可视区域内多个列表各自显示大纲，异步请求互不干扰", async () => {
     let resolveOld: (value: any) => void = () => {};
     const env = setup(async (url, data) => {
         if (url.endsWith("getBlockAttrs")) return {};
@@ -152,13 +152,18 @@ test("快速切换列表时旧请求不能覆盖新面板", async () => {
         return { dom: list("other", item("other-item", "另一列表")) };
     });
     try {
-        env.hover("one");
-        env.hover("other-item");
         await settle();
+        const panels = Array.from(env.win.document.querySelectorAll<HTMLElement>(".list-outline-floating"));
+        assert.equal(panels.length, 2);
+        const rootPanel = panels.find(p => p.dataset.listId === "root")!;
+        const otherPanel = panels.find(p => p.dataset.listId === "other")!;
+        assert.equal(otherPanel.querySelectorAll("button").length, 1);
+        assert.equal(otherPanel.querySelector("button")?.dataset.id, "other-item");
         resolveOld({ dom: nested });
         await settle();
-        assert.equal(env.panel.querySelectorAll("button").length, 1);
-        assert.equal(env.panel.querySelector("button")?.dataset.id, "other-item");
+        assert.equal(otherPanel.querySelectorAll("button").length, 1);
+        assert.equal(otherPanel.querySelector("button")?.dataset.id, "other-item");
+        assert.equal(rootPanel.querySelectorAll("button").length, 4);
     } finally { env.cleanup(); }
 });
 
@@ -182,7 +187,7 @@ test("保存失败恢复选择，不修改列表块属性", async () => {
     } finally { env.cleanup(); }
 });
 
-test("编辑后刷新，离开后隐藏", async () => {
+test("编辑后刷新，离开列表块后大纲保持显示，滚动出可视区后隐藏", async () => {
     const env = setup();
     try {
         env.hover("one");
@@ -191,9 +196,24 @@ test("编辑后刷新，离开后隐藏", async () => {
         text.textContent = "修改后的标题";
         await settle();
         assert.equal(env.panel.querySelector("button")?.title, "修改后的标题");
+
+        // 鼠标移出列表块到外部：大纲不隐藏，依然显示
         env.win.document.body.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
         await new Promise(resolve => setTimeout(resolve, 280));
+        assert.equal(env.panel.hidden, false);
+
+        // 列表滚动离开可视区域后隐藏
+        const root = env.win.document.querySelector<HTMLElement>('[data-node-id="root"]')!;
+        root.getBoundingClientRect = () => ({ x: 40, y: -900, left: 40, right: 800, top: -900, bottom: -100, width: 760, height: 800, toJSON() {} });
+        env.win.document.querySelector('.protyle-content')!.dispatchEvent(new env.win.Event("scroll"));
+        await settle();
         assert.equal(env.panel.hidden, true);
+
+        // 列表滚回可视区域后恢复显示
+        root.getBoundingClientRect = () => ({ x: 40, y: 40, left: 40, right: 800, top: 40, bottom: 600, width: 760, height: 560, toJSON() {} });
+        env.win.document.querySelector('.protyle-content')!.dispatchEvent(new env.win.Event("scroll"));
+        await settle();
+        assert.equal(env.panel.hidden, false);
     } finally { env.cleanup(); }
 });
 
@@ -326,3 +346,146 @@ test("默认只显示层级线条，悬停展开文字和设置，离开后恢�
         assert.equal(env.win.getComputedStyle(text).display, "none");
     } finally { env.cleanup(); }
 });
+
+test("列表右键打开菜单时离开大纲不关闭或收起，菜单关闭后恢复紧凑线条", async () => {
+    const env = setup();
+    try {
+        let closeMenu: () => void = () => {};
+        const openInsertMenu = (event: any, target: any, onInserted: any, onClose?: () => void) => {
+            event.preventDefault();
+            closeMenu = onClose || (() => {});
+        };
+        (env.controller as any).options.openInsertMenu = openInsertMenu;
+        env.hover("one");
+        await settle();
+        assert.equal(env.panel.hidden, false);
+        const event = new env.win.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+        env.panel.querySelector('[data-id="two"] span')!.dispatchEvent(event);
+        assert.equal(env.panel.style.width, "300px");
+        assert.equal(env.panel.hidden, false);
+
+        const outside = env.win.document.createElement("div");
+        env.win.document.body.append(outside);
+        env.panel.dispatchEvent(new env.win.MouseEvent("pointerout", { bubbles: true, relatedTarget: outside }));
+        env.win.document.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true, target: outside } as any));
+        env.win.document.dispatchEvent(new env.win.MouseEvent("pointerdown", { bubbles: true, target: outside } as any));
+        await settle();
+        assert.equal(env.panel.hidden, false);
+        assert.equal(env.panel.style.width, "300px");
+
+        closeMenu();
+        await new Promise(resolve => setTimeout(resolve, 260));
+        assert.equal(env.panel.hidden, false);
+        assert.equal(env.panel.style.width, "48px");
+    } finally { env.cleanup(); }
+});
+
+test("无子级判定：包含引述块、代码块、附加段落或子列表均视为包含子块", () => {
+    const flatDOM = new JSDOM(list("f1", item("f1-1", "普通项1") + item("f1-2", "普通项2"))).window.document;
+    assert.equal(hasChildBlocks(flatDOM.querySelector<HTMLElement>('[data-node-id="f1"]')!), false);
+
+    const quoteDOM = new JSDOM(list("q1", item("q1-1", "项1", quote(paragraph("引述内容"))))).window.document;
+    assert.equal(hasChildBlocks(quoteDOM.querySelector<HTMLElement>('[data-node-id="q1"]')!), true);
+
+    const codeDOM = new JSDOM(list("c1", item("c1-1", "项1", '<div data-type="NodeCodeBlock"><pre>code</pre></div>'))).window.document;
+    assert.equal(hasChildBlocks(codeDOM.querySelector<HTMLElement>('[data-node-id="c1"]')!), true);
+
+    const multiParaDOM = new JSDOM(list("p1", item("p1-1", "标题段落", paragraph("第二段落")))).window.document;
+    assert.equal(hasChildBlocks(multiParaDOM.querySelector<HTMLElement>('[data-node-id="p1"]')!), true);
+
+    const nestedDOM = new JSDOM(nested).window.document;
+    assert.equal(hasChildBlocks(nestedDOM.querySelector<HTMLElement>('[data-node-id="root"]')!), true);
+});
+
+test("设置仅有子块时显示列表大纲：单层纯文本列表隐藏，含引述块或子列表正常显示", async () => {
+    let settings = { ...getDefaultSettings(), listOutlineRequireChildren: true };
+    const env = setup(undefined, () => settings);
+    try {
+        await settle();
+        const panels = Array.from(env.win.document.querySelectorAll<HTMLElement>(".list-outline-floating"));
+        const rootPanel = panels.find(p => p.dataset.listId === "root")!;
+        const otherPanel = panels.find(p => p.dataset.listId === "other")!;
+        // root 包含子列表（one -> two -> three），正常显示
+        assert.equal(rootPanel.hidden, false);
+        // other 只有单层纯文本项（other-item），被隐藏
+        assert.equal(otherPanel.hidden, true);
+
+        // 给 other 列表项增加一个引述子块后，应当显示
+        const otherItem = env.win.document.querySelector<HTMLElement>('[data-node-id="other-item"]')!;
+        const quoteBlock = env.win.document.createElement("div");
+        quoteBlock.setAttribute("data-type", "NodeBlockquote");
+        quoteBlock.innerHTML = "<p>长引述内容</p>";
+        otherItem.append(quoteBlock);
+        env.controller.sync();
+        await settle();
+        assert.equal(otherPanel.hidden, false);
+
+        // 关闭该设置后，即便无子块也恢复显示
+        quoteBlock.remove();
+        settings = { ...settings, listOutlineRequireChildren: false };
+        env.controller.refreshSettings();
+        await settle();
+        assert.equal(otherPanel.hidden, false);
+    } finally { env.cleanup(); }
+});
+
+test("列表大纲支持关键词搜索过滤、高亮匹配项及 Esc 清空", async () => {
+    const env = setup();
+    try {
+        await settle();
+        env.panel.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), true);
+
+        const searchInput = env.panel.querySelector<HTMLInputElement>(".list-outline-floating__search-input")!;
+        assert.ok(searchInput);
+
+        // 初始状态包含全部 4 项
+        let rows = env.panel.querySelectorAll<HTMLButtonElement>("button.list-outline-floating__item");
+        assert.equal(rows.length, 4);
+
+        // 输入 "孙项" 搜索
+        searchInput.value = "孙项";
+        searchInput.dispatchEvent(new env.win.Event("input"));
+        await settle();
+
+        rows = env.panel.querySelectorAll<HTMLButtonElement>("button.list-outline-floating__item");
+        assert.equal(rows.length, 1);
+        assert.equal(rows[0].dataset.id, "three");
+        const match = rows[0].querySelector<HTMLElement>(".list-outline-floating__match")!;
+        assert.ok(match);
+        assert.equal(match.textContent, "孙项");
+
+        // 搜索不存在的关键词
+        searchInput.value = "不存在的内容";
+        searchInput.dispatchEvent(new env.win.Event("input"));
+        await settle();
+
+        rows = env.panel.querySelectorAll<HTMLButtonElement>("button.list-outline-floating__item");
+        assert.equal(rows.length, 0);
+        const empty = env.panel.querySelector<HTMLElement>(".list-outline-floating__empty")!;
+        assert.ok(empty);
+        assert.equal(empty.textContent, "无匹配结果");
+
+        // 按 Escape 清空输入框并恢复完整列表
+        searchInput.dispatchEvent(new env.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        await settle();
+        assert.equal(searchInput.value, "");
+        rows = env.panel.querySelectorAll<HTMLButtonElement>("button.list-outline-floating__item");
+        assert.equal(rows.length, 4);
+
+        // 输入关键词后收起面板，再次展开时自动重置搜索
+        searchInput.value = "子项";
+        searchInput.dispatchEvent(new env.win.Event("input"));
+        await settle();
+        assert.equal(env.panel.querySelectorAll("button.list-outline-floating__item").length, 1);
+
+        env.panel.dispatchEvent(new env.win.MouseEvent("pointerout", { bubbles: true, relatedTarget: env.win.document.body }));
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), false);
+
+        env.panel.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+        assert.equal(searchInput.value, "");
+        assert.equal(env.panel.querySelectorAll("button.list-outline-floating__item").length, 4);
+    } finally { env.cleanup(); }
+});
+
+

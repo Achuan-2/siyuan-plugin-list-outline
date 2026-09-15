@@ -5,7 +5,7 @@ export interface OutlineInsertTarget {
     notebook?: string;
 }
 
-export type OpenInsertMenu = (event: MouseEvent, target: OutlineInsertTarget, onInserted: () => void) => void;
+export type OpenInsertMenu = (event: MouseEvent, target: OutlineInsertTarget, onInserted: () => void, onClose?: () => void) => void;
 type Request = (url: string, data: Record<string, unknown>) => Promise<any>;
 // 与思源原生空块一致，属性区需要零宽占位符，不能渲染为空 div。
 const EMPTY_ATTR = '<div class="protyle-attr" contenteditable="false">\u200b</div>';

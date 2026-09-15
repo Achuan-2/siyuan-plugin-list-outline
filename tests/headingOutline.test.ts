@@ -73,6 +73,7 @@ test("显示列表开关即时生效，关闭不读全文，混合列表支持�
         await settle();
         assert.equal(env.calls.some(call => call.url.endsWith("getBlockDOM")), false);
         const checkbox = env.panel.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+        assert.ok(checkbox.classList.contains("b3-switch"));
         checkbox.click();
         await settle();
         const row = env.panel.querySelector<HTMLButtonElement>('[data-id="three"]')!;
@@ -210,5 +211,31 @@ test("预览模式直接定位预览标题，关闭编辑器后隐藏目录", as
         env.editors[0].element.remove();
         env.controller.syncEditors();
         assert.equal(env.panel.hidden, true);
+    } finally { env.cleanup(); }
+});
+
+test("标题大纲右键打开菜单时离开大纲不收起，菜单关闭后恢复收起", async () => {
+    const env = setup();
+    try {
+        let closeMenu: () => void = () => {};
+        const openInsertMenu = (event: any, target: any, onInserted: any, onClose?: () => void) => {
+            event.preventDefault();
+            closeMenu = onClose || (() => {});
+        };
+        (env.controller as any).options.openInsertMenu = openInsertMenu;
+        await settle();
+        assert.equal(env.panel.hidden, false);
+        const event = new env.win.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+        env.panel.querySelector('[data-id="h1"] span')!.dispatchEvent(event);
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), true);
+
+        env.panel.dispatchEvent(new env.win.MouseEvent("pointerleave", { bubbles: true }));
+        env.panel.dispatchEvent(new env.win.FocusEvent("focusout", { bubbles: true }));
+        await settle();
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), true);
+
+        closeMenu();
+        await settle();
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), false);
     } finally { env.cleanup(); }
 });

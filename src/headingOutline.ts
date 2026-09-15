@@ -30,6 +30,7 @@ export class HeadingOutlineController {
     private editor: HeadingEditor | null = null;
     private entries: HeadingEntry[] = [];
     private expanded = false;
+    private menuOpen = false;
     private disposed = false;
     private version = 0;
     private timer?: ReturnType<typeof setTimeout>;
@@ -54,6 +55,7 @@ export class HeadingOutlineController {
         refresh.addEventListener("click", () => void this.refresh());
         const label = document.createElement("label");
         this.includeLists.type = "checkbox";
+        this.includeLists.className = "b3-switch fn__flex-center";
         this.includeLists.checked = this.settings.headingIncludeLists;
         this.includeLists.addEventListener("change", async () => {
             this.includeLists.disabled = true;
@@ -78,9 +80,13 @@ export class HeadingOutlineController {
         this.panel.hidden = true;
         document.body.append(this.panel);
         this.panel.addEventListener("pointerenter", () => this.setExpanded(true));
-        this.panel.addEventListener("pointerleave", () => this.setExpanded(false));
+        this.panel.addEventListener("pointerleave", () => {
+            if (this.menuOpen) return;
+            this.setExpanded(false);
+        });
         this.panel.addEventListener("focusin", () => this.setExpanded(true));
         this.panel.addEventListener("focusout", event => {
+            if (this.menuOpen) return;
             if (!(event.relatedTarget instanceof Node && this.panel.contains(event.relatedTarget)) && !this.panel.matches(":hover")) this.setExpanded(false);
         });
         this.body.addEventListener("click", this.onClick);
@@ -127,11 +133,15 @@ export class HeadingOutlineController {
     }
 
     private onEditorPointer = (event: Event) => {
+        if (this.menuOpen) return;
         if (event.target instanceof HTMLElement && !this.panel.contains(event.target)) this.syncEditors(event.target);
     };
 
     private onKeyDown = (event: KeyboardEvent) => {
-        if (event.key === "Escape") this.setExpanded(false);
+        if (event.key === "Escape") {
+            if (this.menuOpen) return;
+            this.setExpanded(false);
+        }
     };
 
     scheduleRefresh() {
@@ -228,9 +238,17 @@ export class HeadingOutlineController {
         if (!row?.dataset.id || !this.editor) return;
         const rootID = this.editor.rootID;
         const kind = this.entries.find(entry => entry.id === row.dataset.id)?.kind || "heading";
+        this.menuOpen = true;
+        this.setExpanded(true);
         this.options.openInsertMenu?.(event, { id: row.dataset.id, kind, editor: this.editor.element,
             notebook: this.editor.notebook }, () => {
             if (!this.disposed && this.editor?.rootID === rootID) void this.refresh();
+        }, () => {
+            this.menuOpen = false;
+            if (this.disposed) return;
+            if (!this.panel.matches(":hover") && !(document.activeElement && this.panel.contains(document.activeElement))) {
+                this.setExpanded(false);
+            }
         });
     };
 
@@ -283,6 +301,7 @@ export class HeadingOutlineController {
 
     destroy() {
         this.disposed = true;
+        this.menuOpen = false;
         this.version++;
         clearTimeout(this.timer);
         clearInterval(this.heartbeat);
