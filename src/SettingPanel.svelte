@@ -9,7 +9,7 @@
     let saving = false;
     $: items = [
         { key: 'enableHeadingOutline', type: 'checkbox', value: settings.enableHeadingOutline,
-          title: '悬浮标题大纲', description: '在当前文档右侧显示标题目录，悬停线条展开内容，点击定位标题。' },
+          title: '标题大纲', description: '在当前文档右侧显示标题目录，悬停线条展开内容，点击定位标题。' },
         { key: 'enableListOutline', type: 'checkbox', value: settings.enableListOutline,
           title: '列表大纲', description: '鼠标进入列表块后显示该列表的大纲；不提取引述块中的列表项。' },
         { key: 'headingIncludeLists', type: 'checkbox', value: settings.headingIncludeLists,
