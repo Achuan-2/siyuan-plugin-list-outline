@@ -8,10 +8,14 @@
     let settings = { ...plugin.settings };
     let saving = false;
     $: items = [
+        { key: 'enableHeadingOutline', type: 'checkbox', value: settings.enableHeadingOutline,
+          title: '悬浮标题大纲', description: '在当前文档右侧显示标题目录，悬停线条展开内容，点击定位标题。' },
+        { key: 'enableListOutline', type: 'checkbox', value: settings.enableListOutline,
+          title: '列表大纲', description: '鼠标进入列表块后显示该列表的大纲；不提取引述块中的列表项。' },
+        { key: 'headingIncludeLists', type: 'checkbox', value: settings.headingIncludeLists,
+          title: '标题大纲包含列表项', description: '在所属标题下显示列表层级，遵循列表默认层级及块独立设置；不包含引述中的列表，不影响独立列表悬浮大纲。' },
         { key: 'defaultDepth', type: 'number', value: settings.defaultDepth,
-          title: '默认大纲层级', description: `显示前多少层列表项，范围 1–${MAX_DEPTH}；单独设置过的列表不受影响。` },
-        { key: 'maxTextLength', type: 'number', value: settings.maxTextLength,
-          title: '每项显示字数', description: '每个条目最多显示的字符数，范围 1–200；超出后显示省略号，悬停可查看全文。' },
+          title: '列表默认大纲层级', description: `显示前多少层列表项，范围 1–${MAX_DEPTH}；单独设置过的列表不受影响。` },
     ] as ISettingItem[];
 
     async function save(next = settings) {
@@ -33,7 +37,7 @@
         <SettingPanel group="列表大纲" settingItems={items} display={true}
             on:changed={event => save({ ...settings, [event.detail.key]: event.detail.value })} />
         <div class="footer">
-            <span class="b3-label__text">修改后自动保存。列表右上角可单独选择层级。</span>
+            <span class="b3-label__text">修改后自动保存，两个开关独立生效。</span>
             <button class="b3-button b3-button--outline" on:click={() => save(getDefaultSettings())}>恢复默认</button>
         </div>
     </fieldset>

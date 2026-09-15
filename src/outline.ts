@@ -17,15 +17,6 @@ export function blockDepth(value: string | null): number | null {
     return depth >= 1 && depth <= MAX_DEPTH ? depth : null;
 }
 
-export function truncateText(text: string, length: number): string {
-    // 按用户看到的字符计数，避免截断 emoji、组合音标。
-    const Segmenter = (Intl as any).Segmenter;
-    const characters: string[] = Segmenter
-        ? Array.from(new Segmenter(undefined, { granularity: "grapheme" }).segment(text), (part: any) => part.segment)
-        : Array.from(text);
-    return characters.length > length ? characters.slice(0, length).join("") + "…" : text;
-}
-
 export function findList(target: Element): HTMLElement | null {
     const editor = target.closest(".protyle-wysiwyg");
     if (!editor) return null;

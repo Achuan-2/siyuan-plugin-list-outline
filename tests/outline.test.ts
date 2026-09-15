@@ -3,8 +3,9 @@ import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import { compile } from "sass";
 import { fileURLToPath } from "node:url";
-import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, findList, truncateText } from "../src/outline";
-import { normalizeSettings } from "../src/defaultSettings";
+import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, findList } from "../src/outline";
+import { createOutlineRow } from "../src/outlineView";
+import { getDefaultSettings, normalizeSettings } from "../src/defaultSettings";
 import { ListOutlineController } from "../src/listOutline";
 
 const paragraph = (text: string) => `<div data-type="NodeParagraph"><div contenteditable="true">${text}</div></div>`;
@@ -52,16 +53,27 @@ test("引述中的文字不会作为列表项标题，独立引述列表不触�
     assert.equal(extractOutline(document.querySelector('[data-node-id="root"]')!, 3)[0].text, "自己的标题");
 });
 
-test("截断中文和完整 emoji，等长不加省略号", () => {
-    assert.equal(truncateText("中文测试", 2), "中文…");
-    assert.equal(truncateText("中文", 2), "中文");
-    assert.equal(truncateText("👨‍👩‍👧‍👦你好", 2), "👨‍👩‍👧‍👦你…");
-    assert.equal(truncateText("e\u0301xy", 1), "e\u0301…");
+test("大纲保留完整标题，按可用宽度单行省略", () => {
+    const env = setup();
+    try {
+        const title = "很长的列表和标题内容👨‍👩‍👧‍👦".repeat(20);
+        const row = createOutlineRow({ id: "long", text: title, depth: 2 });
+        env.panel.append(row);
+        const text = row.querySelector<HTMLElement>('.list-outline-floating__text')!;
+        assert.equal(text.textContent, title);
+        assert.equal(row.title, title);
+        const style = env.win.getComputedStyle(text);
+        assert.equal(style.whiteSpace, "nowrap");
+        assert.equal(style.textOverflow, "ellipsis");
+        assert.equal(style.minWidth, "0px");
+    } finally { env.cleanup(); }
 });
 
 test("异常设置恢复默认，独立块层级只接受有效整数", () => {
-    assert.deepEqual(normalizeSettings({ defaultDepth: 0, maxTextLength: NaN }), { defaultDepth: 3, maxTextLength: 20 });
-    assert.deepEqual(normalizeSettings({ defaultDepth: 99, maxTextLength: 999 }), { defaultDepth: 20, maxTextLength: 200 });
+    assert.deepEqual(normalizeSettings({ defaultDepth: 0 }), getDefaultSettings());
+    assert.deepEqual(normalizeSettings({ defaultDepth: 99 }), { ...getDefaultSettings(), defaultDepth: 20 });
+    const legacySettings = { ...getDefaultSettings(), maxTextLength: 2 };
+    assert.deepEqual(normalizeSettings(legacySettings), getDefaultSettings());
     for (const value of [null, "", "0", "-1", "1.5", "21", "abc"]) assert.equal(blockDepth(value), null);
     assert.equal(blockDepth("4"), 4);
 });
@@ -90,19 +102,21 @@ function setup(request?: (url: string, data: any) => Promise<any>) {
     win.HTMLElement.prototype.getBoundingClientRect = () => ({ x: 40, y: 40, left: 40, right: 800, top: 40, bottom: 600, width: 760, height: 560, toJSON() {} });
     const writes: any[] = [];
     const errors: string[] = [];
+    const menus: any[] = [];
     const controller = new ListOutlineController({
-        getSettings: () => ({ defaultDepth: 3, maxTextLength: 4 }),
+        getSettings: () => ({ ...getDefaultSettings(), enableHeadingOutline: false, defaultDepth: 3 }),
         request: request || (async (url, data) => {
             if (url.endsWith("setBlockAttrs")) { writes.push(data); return null; }
             if (url.endsWith("getBlockAttrs")) return {};
             return { dom: win.document.querySelector(`[data-node-id="${data.id}"]`)?.outerHTML };
         }),
         navigate: () => {}, reportError: message => errors.push(message),
+        openInsertMenu: (event, target) => { event.preventDefault(); menus.push(target); },
     });
     const hover = (id: string) => win.document.querySelector(`[data-node-id="${id}"]`)!.dispatchEvent(new win.MouseEvent("pointerover", { bubbles: true }));
     const panel = win.document.querySelector<HTMLElement>(".list-outline-floating")!;
     const cleanup = () => { controller.destroy(); win.close(); };
-    return { win, controller, hover, panel, writes, errors, cleanup };
+    return { win, controller, hover, panel, writes, errors, menus, cleanup };
 }
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
 
@@ -206,9 +220,82 @@ test("鼠标移入悬浮面板不会关闭大纲", async () => {
     } finally { env.cleanup(); }
 });
 
+test("列表线条随鼠标与光标高亮，隐藏层级回退父项，渲染后保留高亮", async () => {
+    const env = setup();
+    try {
+        env.hover("two");
+        await settle();
+        const current = () => env.panel.querySelector<HTMLButtonElement>('[aria-current="location"]')?.dataset.id;
+        assert.equal(current(), "two");
+        assert.equal(env.panel.querySelectorAll('.list-outline-floating__current').length, 1);
+        const line = env.panel.querySelector<HTMLElement>('[data-id="two"] .list-outline-floating__line')!;
+        assert.equal(env.win.getComputedStyle(line).opacity, "1");
+        const text = env.win.document.querySelector('[data-node-id="four"] [contenteditable]')!.firstChild!;
+        const selection = env.win.document.getSelection()!;
+        selection.collapse(text, 1);
+        env.win.document.dispatchEvent(new env.win.Event("selectionchange"));
+        await settle();
+        assert.equal(current(), "four");
+        env.hover("three");
+        await settle();
+        assert.equal(current(), "three");
+        const select = env.panel.querySelector("select")!;
+        select.value = "1";
+        select.dispatchEvent(new env.win.Event("change"));
+        await settle();
+        assert.equal(current(), "one");
+        env.controller.refreshSettings();
+        await settle();
+        assert.equal(current(), "one");
+    } finally { env.cleanup(); }
+});
+
+test("列表随编辑区滚动更新高亮，大纲自身滚动不改变当前位置", async () => {
+    const env = setup();
+    try {
+        env.hover("two");
+        await settle();
+        const current = () => env.panel.querySelector<HTMLButtonElement>('[aria-current="location"]')?.dataset.id;
+        assert.equal(current(), "two");
+        const tops = { one: -200, two: -150, three: -100, four: 50 };
+        for (const [id, top] of Object.entries(tops)) {
+            env.win.document.querySelector<HTMLElement>(`[data-node-id="${id}"]`)!.getBoundingClientRect = () =>
+                ({ x: 40, y: top, left: 40, top, right: 700, bottom: top + 50, width: 660, height: 50, toJSON() {} });
+        }
+        env.win.document.querySelector('.protyle-content')!.dispatchEvent(new env.win.Event("scroll"));
+        await settle();
+        assert.equal(current(), "four");
+        env.panel.querySelector('.list-outline-floating__body')!.dispatchEvent(new env.win.Event("scroll"));
+        await settle();
+        assert.equal(current(), "four");
+    } finally { env.cleanup(); }
+});
+
+test("列表右键锁定对应项，列表大纲放到正文右侧留白", async () => {
+    const env = setup();
+    try {
+        const root = env.win.document.querySelector<HTMLElement>('[data-node-id="root"]')!;
+        root.getBoundingClientRect = () => ({ x: 40, y: 40, left: 40, top: 40, right: 440, bottom: 600, width: 400, height: 560, toJSON() {} });
+        env.hover("one");
+        await settle();
+        assert.equal(env.panel.style.left, "448px");
+        env.panel.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+        assert.equal(env.panel.style.left, "448px");
+        const event = new env.win.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+        env.panel.querySelector('[data-id="two"] span')!.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, true);
+        assert.equal(env.menus[0].id, "two");
+        assert.equal(env.menus[0].kind, "list");
+    } finally { env.cleanup(); }
+});
+
 test("默认只显示层级线条，悬停展开文字和设置，离开后恢复线条且右边缘固定", async () => {
     const env = setup();
     try {
+        const headingPanel = env.win.document.createElement("aside");
+        headingPanel.className = "list-outline-floating heading-outline-floating";
+        env.win.document.body.append(headingPanel);
+        const zIndex = (element: HTMLElement) => Number(env.win.getComputedStyle(element).zIndex);
         env.hover("one");
         await settle();
         const header = env.panel.querySelector<HTMLElement>(".list-outline-floating__header")!;
@@ -216,11 +303,15 @@ test("默认只显示层级线条，悬停展开文字和设置，离开后恢�
         const line = env.panel.querySelector<HTMLElement>(".list-outline-floating__line")!;
         const right = () => parseFloat(env.panel.style.left) + parseFloat(env.panel.style.width);
         const compactRight = right();
+        assert.ok(zIndex(env.panel) < zIndex(headingPanel));
         assert.equal(env.panel.style.width, "48px");
         assert.equal(env.win.getComputedStyle(header).display, "none");
         assert.equal(env.win.getComputedStyle(text).display, "none");
         assert.notEqual(env.win.getComputedStyle(line).display, "none");
         env.panel.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+        assert.ok(zIndex(env.panel) > zIndex(headingPanel));
+        headingPanel.classList.add("list-outline-floating--expanded");
+        assert.ok(zIndex(env.panel) > zIndex(headingPanel));
         assert.equal(env.panel.style.width, "300px");
         assert.equal(right(), compactRight);
         assert.equal(env.win.getComputedStyle(header).display, "flex");
@@ -229,6 +320,7 @@ test("默认只显示层级线条，悬停展开文字和设置，离开后恢�
         env.panel.dispatchEvent(new env.win.MouseEvent("pointerout", { bubbles: true,
             relatedTarget: env.win.document.querySelector('[data-node-id="one"]') }));
         assert.equal(env.panel.hidden, false);
+        assert.ok(zIndex(env.panel) < zIndex(headingPanel));
         assert.equal(env.panel.style.width, "48px");
         assert.equal(right(), compactRight);
         assert.equal(env.win.getComputedStyle(text).display, "none");

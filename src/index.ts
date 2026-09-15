@@ -1,17 +1,22 @@
-import { Plugin, Dialog, fetchSyncPost, openTab, openMobileFileById, getFrontend, showMessage } from "siyuan";
+import { Plugin, Dialog, Menu, fetchSyncPost, openTab, openMobileFileById, getFrontend, getAllEditor, showMessage, type IProtyle } from "siyuan";
 import "./index.scss";
 import SettingPanel from "./SettingPanel.svelte";
 import { normalizeSettings, type OutlineSettings } from "./defaultSettings";
 import { ListOutlineController } from "./listOutline";
+import { HeadingOutlineController, type HeadingEditor } from "./headingOutline";
+import { insertOutlineSibling, insertIntoOutlineEditor, type OutlineInsertTarget, type OpenInsertMenu } from "./outlineInsert";
 
 const SETTINGS_FILE = "settings.json";
 
 export default class ListOutlinePlugin extends Plugin {
     settings: OutlineSettings = normalizeSettings();
     private outline?: ListOutlineController;
+    private headingOutline?: HeadingOutlineController;
     private disposed = false;
     private settingsQueue: Promise<unknown> = Promise.resolve();
     private dialogs = new Set<Dialog>();
+    private insertMenu?: Menu;
+    private inserting = new Set<string>();
 
     async onload() {
         this.disposed = false;
@@ -21,13 +26,47 @@ export default class ListOutlinePlugin extends Plugin {
             console.error("列表大纲：加载设置失败", error);
         }
         if (this.disposed) return;
-        this.outline = new ListOutlineController({
+        for (const event of this.protyleEvents) this.eventBus.on(event, this.onProtyle);
+        this.eventBus.on("ws-main", this.onWorkspaceMessage);
+        this.syncFeatures();
+    }
+
+    private protyleEvents = ["loaded-protyle-static", "loaded-protyle-dynamic", "switch-protyle", "switch-protyle-mode", "destroy-protyle"] as const;
+
+    private onProtyle = (event: CustomEvent<{ protyle: IProtyle }>) => {
+        this.headingOutline?.syncEditors(event.detail.protyle.element);
+        if (event.type.startsWith("loaded-")) this.headingOutline?.scheduleRefresh();
+    };
+
+    private onWorkspaceMessage = (event: CustomEvent<{ cmd: string }>) => {
+        // 原生大纲在 savedoc 后重新读取标题，兼顾同步、撤销和标题编号变更。
+        if (["savedoc", "transactions", "reload", "rename"].includes(event.detail.cmd)) this.headingOutline?.scheduleRefresh();
+    };
+
+    onLayoutReady() { this.headingOutline?.syncEditors(); }
+
+    private request = async (url: string, data: Record<string, unknown>) => {
+        const response = await fetchSyncPost(url, data);
+        if (!response || response.code !== 0) throw new Error(response?.msg || "请求失败");
+        return response.data;
+    };
+
+    private getHeadingEditors = (): HeadingEditor[] => getAllEditor().flatMap(editor => {
+        const protyle = editor?.protyle;
+        if (!protyle?.block?.rootID || !protyle.element) return [];
+        const preview = !!protyle.preview?.element && !protyle.preview.element.classList.contains("fn__none");
+        const content = preview ? protyle.preview.element : protyle.wysiwyg?.element;
+        if (!content) return [];
+        return [{ element: protyle.element, content, rootID: protyle.block.rootID,
+            notebook: protyle.notebookId, preview }];
+    });
+
+    private syncFeatures() {
+        this.insertMenu?.close();
+        if (this.settings.enableListOutline && !this.outline) this.outline = new ListOutlineController({
             getSettings: () => this.settings,
-            request: async (url, data) => {
-                const response = await fetchSyncPost(url, data);
-                if (!response || response.code !== 0) throw new Error(response?.msg || "请求失败");
-                return response.data;
-            },
+            request: this.request,
+            openInsertMenu: this.openInsertMenu,
             navigate: id => {
                 if (getFrontend().includes("mobile")) {
                     openMobileFileById(this.app, id, ["cb-get-hl"]);
@@ -37,12 +76,44 @@ export default class ListOutlinePlugin extends Plugin {
             },
             reportError: message => showMessage(message, 5000, "error"),
         });
+        if (!this.settings.enableListOutline) {
+            this.outline?.destroy();
+            this.outline = undefined;
+        }
+        if (this.settings.enableHeadingOutline && !this.headingOutline) this.headingOutline = new HeadingOutlineController({
+            getEditors: this.getHeadingEditors,
+            getSettings: () => this.settings,
+            setIncludeLists: enabled => this.saveSettings({ ...this.settings, headingIncludeLists: enabled }),
+            openInsertMenu: this.openInsertMenu,
+            request: this.request,
+            navigate: (id, folded) => {
+                const mobile = getFrontend().includes("mobile");
+                const action = mobile ? "cb-get-hl" : "cb-get-focus";
+                const actions: Parameters<typeof openMobileFileById>[2] = folded
+                    ? [action, "cb-get-all", "cb-get-html", "cb-get-outline"]
+                    : [action, "cb-get-outline", "cb-get-setid", "cb-get-context", "cb-get-html"];
+                if (mobile) openMobileFileById(this.app, id, actions);
+                else void openTab({ app: this.app, doc: { id, action: actions } });
+            },
+            reportError: message => showMessage(message, 5000, "error"),
+        });
+        if (!this.settings.enableHeadingOutline) {
+            this.headingOutline?.destroy();
+            this.headingOutline = undefined;
+        }
+        this.outline?.refreshSettings();
+        this.headingOutline?.refreshSettings();
     }
 
     onunload() {
         this.disposed = true;
+        this.insertMenu?.close();
         this.outline?.destroy();
         this.outline = undefined;
+        this.headingOutline?.destroy();
+        this.headingOutline = undefined;
+        for (const event of this.protyleEvents) this.eventBus.off(event, this.onProtyle);
+        this.eventBus.off("ws-main", this.onWorkspaceMessage);
         this.dialogs.forEach(dialog => dialog.destroy());
         this.dialogs.clear();
     }
@@ -52,17 +123,65 @@ export default class ListOutlinePlugin extends Plugin {
         const save = this.settingsQueue.then(async () => {
             await this.saveData(SETTINGS_FILE, next);
             this.settings = next;
-            this.outline?.refreshSettings();
+            if (!this.disposed) this.syncFeatures();
         });
         this.settingsQueue = save.catch(() => {});
         await save;
         return next;
     }
 
+    private canInsert(target: OutlineInsertTarget) {
+        if (this.disposed || !(target.kind === "heading" ? this.settings.enableHeadingOutline :
+            this.settings.enableListOutline || (this.settings.enableHeadingOutline && this.settings.headingIncludeLists))) return false;
+        const protyle = getAllEditor().find(editor => editor?.protyle?.element === target.editor || editor?.protyle?.element.contains(target.editor))?.protyle;
+        return !!protyle && protyle.element.isConnected && !protyle.disabled && !protyle.options?.action?.includes("cb-get-history");
+    }
+
+    private openInsertMenu: OpenInsertMenu = (event, target, onInserted) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.insertMenu?.close();
+        const menu = new Menu(`${this.name}-outline-insert`);
+        this.insertMenu = menu;
+        const noun = target.kind === "heading" ? "同级标题" : "同级列表项";
+        for (const direction of ["before", "after"] as const) menu.addItem({
+            icon: direction === "before" ? "iconBefore" : "iconAfter",
+            label: `${direction === "before" ? "向上" : "向下"}插入${noun}`,
+            disabled: !this.canInsert(target) || this.inserting.has(target.id),
+            click: async () => {
+                if (!this.canInsert(target) || this.inserting.has(target.id)) return;
+                this.inserting.add(target.id);
+                let inserted = false;
+                try {
+                    let insertedInEditor = false;
+                    const id = await insertOutlineSibling(target, direction, this.request,
+                        () => (window as any).Lute.NewNodeID(), () => this.canInsert(target), operation => {
+                            const editor = getAllEditor().find(item => item.protyle?.element === target.editor || item.protyle?.element.contains(target.editor));
+                            const content = editor?.protyle.wysiwyg?.element;
+                            if (!content || !editor.protyle.preview?.element.classList.contains("fn__none")) return false;
+                            insertedInEditor = insertIntoOutlineEditor(content, operation,
+                                (insert, undo) => editor.transaction([insert], [undo]));
+                            return insertedInEditor;
+                        });
+                    inserted = true;
+                    if (this.disposed) return;
+                    onInserted();
+                    if (insertedInEditor) return;
+                    if (getFrontend().includes("mobile")) openMobileFileById(this.app, id, ["cb-get-focus", "cb-get-context", "cb-get-html"]);
+                    else await openTab({ app: this.app, doc: { id, action: ["cb-get-focus", "cb-get-context", "cb-get-html"] } });
+                } catch (error) {
+                    console.error("大纲插入失败", error);
+                    if (!this.disposed) showMessage(inserted ? "已插入新块，但自动定位失败，请在文档中查看。" : `插入失败：${error.message || "请重试"}`, 5000, "error");
+                } finally { this.inserting.delete(target.id); }
+            },
+        });
+        menu.open({ x: event.clientX, y: event.clientY });
+    };
+
     openSetting() {
         let panel: SettingPanel;
         const dialog = new Dialog({
-            title: "列表大纲设置",
+            title: "悬浮大纲设置",
             content: '<div class="list-outline-settings"></div>',
             width: "560px",
             destroyCallback: () => {

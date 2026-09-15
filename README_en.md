@@ -1,11 +1,17 @@
 # List Outline
 
+Right-click a heading or list entry to insert a sibling above or below it. A heading inserted below follows the entire current section, matching SiYuan's native outline behavior. List items preserve their list type; new tasks start unchecked. New blocks are empty and focused for typing. The list panel prefers the blank space to the right of the list, falling back to the editor's right edge when space is limited.
+
+The plugin provides independently switchable floating heading and list outlines. Both are enabled by default. The heading outline follows the current document and uses SiYuan's native `/api/outline/getDocOutline` tree, heading levels, and numbering. Hover to expand labels, click to navigate, and scroll to highlight the current heading. Folded headings use the native block-fold check before navigation. Heading depth is independent of the list depth setting. Both outlines show each label on one line, with an ellipsis when it exceeds the available width.
+
+Enable “Show lists” in the heading panel or its plugin setting to include list items beneath their headings in document order. This option defaults to off and is saved automatically. It respects global and per-list depth, excludes blockquotes, and works independently of the floating list panel. Mixed list entries support navigation and sibling insertion too.
+
 A SiYuan plugin that displays compact outline lines at the upper-right corner of a hovered list. Hover over the lines to expand the labels and depth settings; move away to collapse them.
 
 - Supports ordered, unordered, task, and nested lists.
 - Lists inside blockquotes are excluded from the outline and do not trigger a separate panel.
-- Defaults to 3 levels and 20 characters per entry. Longer labels end in an ellipsis; hover for the full text.
-- Configure global depth (1–20) and label length (1–200) in plugin settings.
+- Defaults to 3 levels. Labels fit one line and overflow with an ellipsis; hover for the full text.
+- Configure global depth (1–20) in plugin settings. The character limit setting has been removed; older character limits are ignored.
 - Choose a depth in the floating panel to override the current list, or restore the global default.
 - Click an entry to navigate to its list item.
 - The outermost list and its nested lists share one outline. Only list items add levels; additional paragraphs and block metadata do not.

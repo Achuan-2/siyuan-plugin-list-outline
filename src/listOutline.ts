@@ -1,11 +1,14 @@
 import { MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
-import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, findList, LIST_SELECTOR, truncateText } from "./outline";
+import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, findList, LIST_SELECTOR } from "./outline";
+import { createOutlineRow, setOutlineCurrent } from "./outlineView";
+import type { OpenInsertMenu } from "./outlineInsert";
 
 interface Options {
     getSettings(): OutlineSettings;
     request(url: string, data: Record<string, unknown>): Promise<any>;
     navigate(id: string): void;
     reportError(message: string): void;
+    openInsertMenu?: OpenInsertMenu;
 }
 
 export class ListOutlineController {
@@ -28,6 +31,7 @@ export class ListOutlineController {
     private saving = new Set<string>();
     private disposed = false;
     private expanded = false;
+    private currentItemID = "";
 
     constructor(private options: Options) {
         this.panel.className = "list-outline-floating";
@@ -53,14 +57,16 @@ export class ListOutlineController {
         document.body.append(this.panel);
         this.select.addEventListener("change", this.saveDepth);
         this.body.addEventListener("click", this.onEntryClick);
+        this.body.addEventListener("contextmenu", this.onContextMenu);
         this.panel.addEventListener("focusin", this.onFocusIn);
         this.panel.addEventListener("focusout", this.onFocusOut);
         document.addEventListener("pointerover", this.onPointerOver);
         document.addEventListener("pointerout", this.onPointerOut);
         document.addEventListener("pointerdown", this.onPointerDown);
         document.addEventListener("keydown", this.onKeyDown);
+        document.addEventListener("selectionchange", this.onSelectionChange);
         window.addEventListener("blur", this.hide);
-        window.addEventListener("scroll", this.schedulePosition, true);
+        window.addEventListener("scroll", this.onScroll, true);
         window.addEventListener("resize", this.schedulePosition);
         this.observer = new MutationObserver(this.onMutation);
         this.resizeObserver = new ResizeObserver(this.schedulePosition);
@@ -77,6 +83,7 @@ export class ListOutlineController {
         if (list) {
             clearTimeout(this.hideTimer);
             if (list !== this.active) this.show(list);
+            this.setCurrentFromNode(event.target);
         } else if (this.active) this.scheduleHide();
     };
 
@@ -101,6 +108,27 @@ export class ListOutlineController {
 
     private onKeyDown = (event: KeyboardEvent) => {
         if (event.key === "Escape") this.hide();
+    };
+
+    private setCurrentFromNode(node: Node | null) {
+        const element = node instanceof Element ? node : node?.parentElement;
+        if (!element || !this.active?.contains(element)) return;
+        // 引述内容不生成大纲项，也不成为当前位置。
+        if (element.closest('[data-type="NodeBlockquote"], blockquote')) return;
+        const item = element.closest<HTMLElement>('[data-type="NodeListItem"]');
+        if (!item || !this.active.contains(item)) return;
+        this.currentItemID = item.dataset.nodeId || "";
+        this.schedulePosition();
+    }
+
+    private onSelectionChange = () => this.setCurrentFromNode(document.getSelection()?.focusNode || null);
+
+    private onScroll = (event: Event) => {
+        if (!this.active || (event.target instanceof Node && this.panel.contains(event.target))) return;
+        // 编辑区滚动后跟随阅读位置，避免仍指向留在屏幕外的编辑光标。
+        if (event.target instanceof Element && !event.target.contains(this.active)) return;
+        this.currentItemID = "";
+        this.schedulePosition();
     };
 
     private onFocusIn = () => this.setExpanded(true);
@@ -203,21 +231,7 @@ export class ListOutlineController {
         const entries = extractOutline(this.source, this.override ?? settings.defaultDepth);
         const fragment = document.createDocumentFragment();
         for (const entry of entries) {
-            const row = document.createElement("button");
-            row.type = "button";
-            row.className = "list-outline-floating__item";
-            row.dataset.id = entry.id;
-            row.style.setProperty("--outline-indent", `${10 + (entry.depth - 1) * 14}px`);
-            row.style.setProperty("--outline-line-width", `${Math.max(8, 28 - (entry.depth - 1) * 4)}px`);
-            const line = document.createElement("span");
-            line.className = "list-outline-floating__line";
-            line.setAttribute("aria-hidden", "true");
-            const text = document.createElement("span");
-            text.className = "list-outline-floating__text";
-            text.textContent = truncateText(entry.text, settings.maxTextLength);
-            row.append(line, text);
-            row.title = entry.text;
-            row.setAttribute("aria-label", `第 ${entry.depth} 层：${entry.text}`);
+            const row = createOutlineRow(entry);
             fragment.append(row);
         }
         if (!entries.length) {
@@ -270,6 +284,8 @@ export class ListOutlineController {
         const button = (event.target as Element).closest<HTMLButtonElement>("button[data-id]");
         if (!button || !this.active) return;
         const id = button.dataset.id!;
+        this.currentItemID = id;
+        setOutlineCurrent(this.body, id);
         const target = Array.from(this.active.querySelectorAll<HTMLElement>('[data-type="NodeListItem"]'))
             .find(node => node.dataset.nodeId === id);
         const foldedParent = target?.parentElement?.closest('[fold="1"]');
@@ -277,6 +293,16 @@ export class ListOutlineController {
             target.scrollIntoView({ block: "center", behavior: "smooth" });
             target.animate([{ backgroundColor: "var(--b3-theme-primary-light)" }, { backgroundColor: "transparent" }], { duration: 1000 });
         } else this.options.navigate(id);
+    };
+
+    private onContextMenu = (event: MouseEvent) => {
+        const row = (event.target as Element).closest<HTMLButtonElement>("button[data-id]");
+        if (!row?.dataset.id || !this.active || !this.editor) return;
+        const rootID = this.active.dataset.nodeId;
+        this.options.openInsertMenu?.(event, { id: row.dataset.id, kind: "list", editor: this.editor,
+            notebook: this.editor.closest<HTMLElement>("[data-notebook-id]")?.dataset.notebookId }, () => {
+            if (!this.disposed && this.active?.dataset.nodeId === rootID) void this.loadSnapshot();
+        });
     };
 
     private schedulePosition = () => {
@@ -304,9 +330,39 @@ export class ListOutlineController {
         const width = Math.max(0, Math.min(this.expanded ? 300 : 48, right - left));
         const y = Math.max(top, Math.min(rect.top + 6, bottom - 100));
         this.panel.style.width = `${width}px`;
-        this.panel.style.left = `${Math.max(left, Math.min(rect.right - width - 6, right - width))}px`;
+        // 尽量放在列表正文右侧留白处，展开也优先向右；空间不足时贴编辑区右边缘。
+        const panelLeft = Math.max(left, Math.min(rect.right + 8, right - width));
+        this.panel.style.left = `${panelLeft}px`;
         this.panel.style.top = `${y}px`;
         this.panel.style.maxHeight = `${Math.max(0, Math.min(420, bottom - y))}px`;
+        this.highlight(top, bottom);
+    }
+
+    private highlight(top: number, bottom: number) {
+        if (!this.active) return;
+        const rows = this.body.querySelectorAll<HTMLElement>("button[data-id]");
+        const ids = new Set(Array.from(rows, row => row.dataset.id!));
+        const items = Array.from(this.active.querySelectorAll<HTMLElement>('[data-type="NodeListItem"]'));
+        const visible = (item: HTMLElement) => item.getClientRects().length > 0 &&
+            !item.closest('[data-type="NodeBlockquote"], blockquote') &&
+            !item.parentElement?.closest('[fold="1"]');
+        let item = items.find(item => item.dataset.nodeId === this.currentItemID && visible(item) &&
+            item.getBoundingClientRect().bottom > top && item.getBoundingClientRect().top < bottom);
+        if (!item) {
+            for (const candidate of items) {
+                if (!visible(candidate)) continue;
+                const rect = candidate.getBoundingClientRect();
+                if (rect.bottom <= top || rect.top >= bottom) continue;
+                if (!item) item = candidate;
+                if (rect.top <= top + 36) item = candidate;
+            }
+        }
+        // 未显示的深层子项回退到大纲中可见的最近父列表项。
+        while (item && !ids.has(item.dataset.nodeId!)) {
+            item = item.parentElement?.closest<HTMLElement>('[data-type="NodeListItem"]');
+            if (item && !this.active.contains(item)) item = null;
+        }
+        setOutlineCurrent(this.body, item?.dataset.nodeId || "");
     }
 
     private hide = () => {
@@ -319,6 +375,7 @@ export class ListOutlineController {
         this.observer?.disconnect();
         this.resizeObserver?.disconnect();
         this.active = null;
+        this.currentItemID = "";
         this.source = null;
         this.editor = null;
         this.panel.hidden = true;
@@ -333,8 +390,9 @@ export class ListOutlineController {
         document.removeEventListener("pointerout", this.onPointerOut);
         document.removeEventListener("pointerdown", this.onPointerDown);
         document.removeEventListener("keydown", this.onKeyDown);
+        document.removeEventListener("selectionchange", this.onSelectionChange);
         window.removeEventListener("blur", this.hide);
-        window.removeEventListener("scroll", this.schedulePosition, true);
+        window.removeEventListener("scroll", this.onScroll, true);
         window.removeEventListener("resize", this.schedulePosition);
         this.panel.remove();
     }

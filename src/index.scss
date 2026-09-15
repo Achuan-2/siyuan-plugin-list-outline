@@ -30,6 +30,8 @@
     &__body { overflow: auto; min-height: 0; padding: 4px; overscroll-behavior: contain; scrollbar-width: none; }
     &__body::-webkit-scrollbar { display: none; }
     &__item {
+        box-sizing: border-box;
+        min-width: 0;
         display: flex;
         align-items: center;
         justify-content: flex-end;
@@ -57,11 +59,20 @@
         background: var(--b3-theme-on-surface-light);
         opacity: 0.65;
     }
-    &__text { display: none; overflow: hidden; text-overflow: ellipsis; }
+    &__text {
+        display: none;
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
     &__empty, &__status { padding: 8px 10px; color: var(--b3-theme-on-surface-light); font-size: 12px; }
     &__empty, &__status { display: none; }
     &__status { flex: none; border-top: 1px solid var(--b3-border-color); }
     &--expanded {
+        // 展开的列表大纲优先于标题大纲，收起时恢复原层级。
+        &:not(.heading-outline-floating) { z-index: 10; }
         background: var(--b3-theme-background);
         border-color: var(--b3-border-color);
         box-shadow: var(--b3-dialog-shadow, 0 4px 20px #0002);
@@ -80,4 +91,13 @@
         .list-outline-floating__status { display: block; }
     }
     &__status:empty { display: none; }
+    &__current { color: var(--b3-theme-primary); }
+    &__current .list-outline-floating__line { background: var(--b3-theme-primary); opacity: 1; }
+    &--expanded .list-outline-floating__current { background: var(--b3-list-hover); }
+}
+
+.heading-outline-floating {
+    z-index: 9;
+    &__icon { display: none; width: 14px; height: 14px; fill: currentColor; flex: none; margin-right: 6px; }
+    &.list-outline-floating--expanded .heading-outline-floating__icon { display: block; }
 }
