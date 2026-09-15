@@ -7,6 +7,8 @@ export interface OutlineInsertTarget {
 
 export type OpenInsertMenu = (event: MouseEvent, target: OutlineInsertTarget, onInserted: () => void) => void;
 type Request = (url: string, data: Record<string, unknown>) => Promise<any>;
+// 与思源原生空块一致，属性区需要零宽占位符，不能渲染为空 div。
+const EMPTY_ATTR = '<div class="protyle-attr" contenteditable="false">\u200b</div>';
 export interface OutlineInsertOperation {
     action: "insert";
     id: string;
@@ -27,12 +29,6 @@ export function insertIntoOutlineEditor(content: HTMLElement, operation: Outline
     const block = template.content.firstElementChild as HTMLElement;
     if (operation.nextID) anchor.before(block);
     else anchor.after(block);
-    try {
-        transaction(operation, { action: "delete", id: operation.id });
-    } catch (error) {
-        block.remove();
-        throw error;
-    }
     block.scrollIntoView({ block: "nearest" });
     const editable = block.querySelector<HTMLElement>('[contenteditable="true"]');
     if (editable) {
@@ -43,6 +39,13 @@ export function insertIntoOutlineEditor(content: HTMLElement, operation: Outline
         const selection = content.ownerDocument.getSelection();
         selection?.removeAllRanges();
         selection?.addRange(range);
+    }
+    // 原生事务会读取当前选区；先把光标移入新块，避免沿用右键前的旧块选区。
+    try {
+        transaction(operation, { action: "delete", id: operation.id });
+    } catch (error) {
+        block.remove();
+        throw error;
     }
     return true;
 }
@@ -66,10 +69,11 @@ export async function insertOutlineSibling(target: OutlineInsertTarget, directio
     }
     const id = newID();
     let data: string;
+    // 思源通过 [spellcheck] 设置正文 min-height，空编辑区也必须带此属性以保留行高。
     if (target.kind === "heading") {
         const subtype = block.dataset.subtype;
         if (!/^h[1-6]$/.test(subtype || "")) throw new Error("标题级别无效。");
-        data = `<div data-type="NodeHeading" data-subtype="${subtype}" data-node-id="${id}" class="${subtype}"><div contenteditable="true"></div><div class="protyle-attr" contenteditable="false"></div></div>`;
+        data = `<div data-type="NodeHeading" data-subtype="${subtype}" data-node-id="${id}" class="${subtype}"><div contenteditable="true" spellcheck="false"></div>${EMPTY_ATTR}</div>`;
     } else {
         const subtype = block.dataset.subtype || "u";
         if (!["u", "o", "t"].includes(subtype)) throw new Error("列表类型无效。");
@@ -79,7 +83,7 @@ export async function insertOutlineSibling(target: OutlineInsertTarget, directio
         const action = subtype === "o" ? `<div class="protyle-action protyle-action--order" contenteditable="false">${marker}</div>`
             : `<div class="protyle-action${subtype === "t" ? " protyle-action--task" : ""}" contenteditable="false"><svg><use xlink:href="#${subtype === "t" ? "iconUncheck" : "iconDot"}"></use></svg></div>`;
         // 仅插入一个列表项，沿用类型和父列表；任务始终从未完成状态开始。
-        data = `<div data-type="NodeListItem" data-subtype="${subtype}" data-marker="${marker}"${subtype === "t" ? ' data-task=" "' : ""} data-node-id="${id}" class="li">${action}<div data-type="NodeParagraph" data-node-id="${newID()}" class="p"><div contenteditable="true"></div><div class="protyle-attr" contenteditable="false"></div></div><div class="protyle-attr" contenteditable="false"></div></div>`;
+        data = `<div data-type="NodeListItem" data-subtype="${subtype}" data-marker="${marker}"${subtype === "t" ? ' data-task=" "' : ""} data-node-id="${id}" class="li">${action}<div data-type="NodeParagraph" data-node-id="${newID()}" class="p"><div contenteditable="true" spellcheck="false"></div>${EMPTY_ATTR}</div>${EMPTY_ATTR}</div>`;
     }
     if (!canInsert()) throw new Error("当前文档不可编辑或大纲已关闭。");
     const operation: OutlineInsertOperation = { action: "insert", id, data,

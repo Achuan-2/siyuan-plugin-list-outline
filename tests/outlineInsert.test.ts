@@ -28,7 +28,8 @@ test("上方插入保持标题级别，下方插入锚定整个章节末尾", as
             assert.equal(write.data[direction === "before" ? "nextID" : "previousID"], direction === "before" ? "anchor" : "section-end");
             const block = new env.dom.window.DOMParser().parseFromString(write.data.data, "text/html").body.firstElementChild!;
             assert.equal(block.getAttribute("data-subtype"), "h3");
-            assert.equal(block.textContent, "");
+            assert.equal(block.querySelector('[contenteditable="true"]')!.textContent, "");
+            assert.equal(block.querySelector('.protyle-attr')!.textContent, "\u200b");
             assert.ok(!write.data.data.includes("已有正文"));
             assert.ok(env.calls.every(call => !call.url.includes("deleteBlock") && !call.url.includes("transactions")));
         } finally { env.dom.window.close(); }
@@ -47,6 +48,7 @@ test("列表上下插入同级项，保留类型、不复制正文子项和属�
             assert.equal(block.getAttribute("data-subtype"), subtype);
             assert.equal(block.querySelectorAll('[data-type="NodeParagraph"]').length, 1);
             assert.equal(block.querySelector('[contenteditable="true"]')!.textContent, "");
+            for (const attr of block.querySelectorAll('.protyle-attr')) assert.equal(attr.textContent, "\u200b");
             assert.equal(block.hasAttribute("custom-test"), false);
             if (subtype === "t") assert.equal(block.getAttribute("data-task"), " ");
             if (subtype === "o") assert.equal(block.getAttribute("data-marker"), direction === "before" ? "7." : "8.");
@@ -66,8 +68,9 @@ test("插入前重新检查编辑权限和块类型，失败不提交写入", as
 });
 
 test("标题和列表上下插入立即渲染并定位，提交可撤销事务且不重复调用插入 API", async () => {
-    for (const kind of ["heading", "list"] as const) for (const direction of ["before", "after"] as const) {
-        const env = setup(kind, kind === "heading" ? "h3" : "u");
+    for (const [kind, subtype] of [["heading", "h3"], ["list", "u"], ["list", "o"], ["list", "t"]] as const)
+        for (const direction of ["before", "after"] as const) {
+        const env = setup(kind, subtype);
         try {
             env.dom.window.HTMLElement.prototype.scrollIntoView = () => {};
             const content = env.dom.window.document.body;
@@ -76,6 +79,13 @@ test("标题和列表上下插入立即渲染并定位，提交可撤销事务�
             const id = await insertOutlineSibling(env.target, direction, env.request, env.newID, () => true,
                 operation => insertIntoOutlineEditor(content, operation, (insert, undo) => {
                     assert.ok(content.querySelector(`[data-node-id="${insert.id}"]`), "提交前已渲染新块");
+                    const editable = content.querySelector(`[data-node-id="${insert.id}"] [contenteditable="true"]`)!;
+                    const selection = env.dom.window.getSelection()!;
+                    assert.equal(selection.anchorNode, editable, "事务读取选区时，光标已位于新块正文");
+                    assert.equal(selection.anchorOffset, 0);
+                    assert.equal(selection.isCollapsed, true);
+                    assert.equal(content.ownerDocument.activeElement, editable);
+                    assert.equal(editable.getAttribute("spellcheck"), "false");
                     transactions.push({ insert, undo });
                 }));
             assert.equal(transactions.length, 1);
@@ -107,6 +117,7 @@ test("未加载或折叠锚点退回 API 插入，不向错误位置添加本地
 test("本地事务同步失败时移除临时新块，不再次插入", async () => {
     const env = setup("list", "u");
     try {
+        env.dom.window.HTMLElement.prototype.scrollIntoView = () => {};
         env.dom.window.document.body.innerHTML = '<div data-node-id="anchor"></div>';
         await assert.rejects(insertOutlineSibling(env.target, "after", env.request, env.newID, () => true,
             operation => insertIntoOutlineEditor(env.dom.window.document.body, operation, () => { throw new Error("事务失败"); })), /事务失败/);
