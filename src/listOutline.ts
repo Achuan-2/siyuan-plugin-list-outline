@@ -42,7 +42,7 @@ export class ListOutlineController {
         this.select.className = "b3-select";
         this.select.setAttribute("aria-label", "当前列表的大纲层级");
         this.select.title = "单独设置当前列表，自动保存到列表块属性";
-        this.select.add(new Option("跟随默认", ""));
+        this.select.add(new Option("默认", ""));
         for (let depth = 1; depth <= MAX_DEPTH; depth++) this.select.add(new Option(`${depth} 层`, String(depth)));
         label.append(this.select);
         header.append(title, label);
@@ -197,7 +197,7 @@ export class ListOutlineController {
     private render() {
         if (!this.active || !this.source) return;
         const settings = this.options.getSettings();
-        this.select.options[0].textContent = `跟随默认（${settings.defaultDepth} 层）`;
+        this.select.options[0].textContent = `默认（${settings.defaultDepth} 层）`;
         this.select.value = this.override === null ? "" : String(this.override);
         this.select.disabled = this.saving.has(this.active.dataset.nodeId!);
         const entries = extractOutline(this.source, this.override ?? settings.defaultDepth);
