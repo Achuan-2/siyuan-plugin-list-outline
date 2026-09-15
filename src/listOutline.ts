@@ -27,6 +27,7 @@ export class ListOutlineController {
     private resizeObserver: ResizeObserver;
     private saving = new Set<string>();
     private disposed = false;
+    private expanded = false;
 
     constructor(private options: Options) {
         this.panel.className = "list-outline-floating";
@@ -52,6 +53,8 @@ export class ListOutlineController {
         document.body.append(this.panel);
         this.select.addEventListener("change", this.saveDepth);
         this.body.addEventListener("click", this.onEntryClick);
+        this.panel.addEventListener("focusin", this.onFocusIn);
+        this.panel.addEventListener("focusout", this.onFocusOut);
         document.addEventListener("pointerover", this.onPointerOver);
         document.addEventListener("pointerout", this.onPointerOut);
         document.addEventListener("pointerdown", this.onPointerDown);
@@ -67,6 +70,7 @@ export class ListOutlineController {
         if (!(event.target instanceof Element)) return;
         if (this.panel.contains(event.target)) {
             clearTimeout(this.hideTimer);
+            this.setExpanded(true);
             return;
         }
         const list = findList(event.target);
@@ -77,7 +81,14 @@ export class ListOutlineController {
     };
 
     private onPointerOut = (event: PointerEvent) => {
+        if (!this.active) return;
         const next = event.relatedTarget;
+        if (event.target instanceof Node && this.panel.contains(event.target) &&
+            !(next instanceof Node && this.panel.contains(next))) {
+            // 原生层级下拉框打开时保留展开状态。
+            if (!next && document.activeElement === this.select) return;
+            this.setExpanded(false);
+        }
         if (next instanceof Node && (this.panel.contains(next) || this.active?.contains(next))) return;
         // 原生下拉框展开时 relatedTarget 可能为空，不能销毁正在操作的控件。
         if (!next && document.activeElement === this.select) return;
@@ -91,6 +102,22 @@ export class ListOutlineController {
     private onKeyDown = (event: KeyboardEvent) => {
         if (event.key === "Escape") this.hide();
     };
+
+    private onFocusIn = () => this.setExpanded(true);
+
+    private onFocusOut = (event: FocusEvent) => {
+        if (!(event.relatedTarget instanceof Node && this.panel.contains(event.relatedTarget)) &&
+            !this.panel.matches(":hover")) this.setExpanded(false);
+    };
+
+    private setExpanded(expanded: boolean) {
+        if (!this.active || expanded === this.expanded) return;
+        this.expanded = expanded;
+        this.panel.classList.toggle("list-outline-floating--expanded", expanded);
+        if (!expanded) this.body.scrollTop = 0;
+        // 展开时向左延伸，右边缘保持不动，避免面板移出鼠标范围。
+        this.position();
+    }
 
     private scheduleHide() {
         clearTimeout(this.hideTimer);
@@ -180,8 +207,15 @@ export class ListOutlineController {
             row.type = "button";
             row.className = "list-outline-floating__item";
             row.dataset.id = entry.id;
-            row.style.paddingInlineStart = `${10 + (entry.depth - 1) * 14}px`;
-            row.textContent = truncateText(entry.text, settings.maxTextLength);
+            row.style.setProperty("--outline-indent", `${10 + (entry.depth - 1) * 14}px`);
+            row.style.setProperty("--outline-line-width", `${Math.max(8, 28 - (entry.depth - 1) * 4)}px`);
+            const line = document.createElement("span");
+            line.className = "list-outline-floating__line";
+            line.setAttribute("aria-hidden", "true");
+            const text = document.createElement("span");
+            text.className = "list-outline-floating__text";
+            text.textContent = truncateText(entry.text, settings.maxTextLength);
+            row.append(line, text);
             row.title = entry.text;
             row.setAttribute("aria-label", `第 ${entry.depth} 层：${entry.text}`);
             fragment.append(row);
@@ -267,7 +301,7 @@ export class ListOutlineController {
             this.hide();
             return;
         }
-        const width = Math.max(0, Math.min(300, right - left));
+        const width = Math.max(0, Math.min(this.expanded ? 300 : 48, right - left));
         const y = Math.max(top, Math.min(rect.top + 6, bottom - 100));
         this.panel.style.width = `${width}px`;
         this.panel.style.left = `${Math.max(left, Math.min(rect.right - width - 6, right - width))}px`;
@@ -288,6 +322,8 @@ export class ListOutlineController {
         this.source = null;
         this.editor = null;
         this.panel.hidden = true;
+        this.expanded = false;
+        this.panel.classList.remove("list-outline-floating--expanded");
     };
 
     destroy() {

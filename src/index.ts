@@ -4,7 +4,7 @@ import SettingPanel from "./SettingPanel.svelte";
 import { normalizeSettings, type OutlineSettings } from "./defaultSettings";
 import { ListOutlineController } from "./listOutline";
 
-export const SETTINGS_FILE = "settings.json";
+const SETTINGS_FILE = "settings.json";
 
 export default class ListOutlinePlugin extends Plugin {
     settings: OutlineSettings = normalizeSettings();

@@ -1,37 +1,43 @@
+# 列表大纲
 
-## 📝更新日志
+思源笔记插件：鼠标进入列表块后，在列表右上角显示简洁的层级线条，鼠标移入线条区域后展开文字大纲。
 
-见[CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-template@main/CHANGELOG.md)
+## 使用
 
+- 支持无序列表、有序列表、任务列表，按列表项嵌套关系生成层级；引述块内的列表项不提取，也不会单独触发大纲。
+- 默认仅显示线条，以长短区分层级；鼠标移入大纲后显示文字与层级设置，移出后恢复线条。
+- 默认显示前 **3 层**，每项最多 **20 个字符**，超出显示「…」。悬停条目可查看完整标题。
+- 点击条目定位对应列表项；折叠或尚未加载的条目通过思源原生块定位打开。
+- 在插件设置中修改「默认大纲层级」（1–20）和「每项显示字数」（1–200），自动保存。
+- 在悬浮大纲顶部选择层级，仅影响当前列表；选择「跟随默认」即可清除独立设置。
+- 鼠标移到大纲上可继续操作；离开列表和大纲后自动隐藏，按 Esc 也可关闭。
+- 长列表滚动时，大纲保持在列表可见区域的右上方；大纲条目可独立滚动。
 
-## 📄 许可证
+一个最外层列表及其嵌套子列表构成一份大纲，在子项间移动不会反复切换面板。每个条目取该列表项自己的首个文本块，附加段落、列表标记和块属性不生成额外条目。仅鼠标或支持悬停的指针会触发面板，纯触屏交互暂未提供专用入口。
 
-AGPL v3.0 License
+## 数据保存
 
-## 🔧 开发
+全局设置保存在插件的 `settings.json` 中。列表的独立层级使用列表块自定义属性 `custom-list-outline-depth`，值为 1–20；未设置或属性无效时跟随全局默认。恢复默认时清空该属性，不改写列表正文或其他块属性。
 
-```bash
+属性通过思源的 [块属性接口](https://github.com/siyuan-note/siyuan/blob/master/docs/API.zh-CN.md#设置块属性) 保存，可随笔记数据同步。停用插件不会删除已保存的设置。
+
+## 安装与构建
+
+```powershell
 pnpm install
-pnpm run dev
+pnpm test
+pnpm typecheck
+pnpm build
 ```
 
+`pnpm build` 生成 `dist/` 和 `package.zip`，随后自动将 `dist/` 同步到思源工作空间的 `data/plugins/siyuan-plugin-list-outline/`。首次同步后，在思源插件设置中启用「列表大纲」。安装包也可解压到其他工作空间的同名目录。
 
-## 🙏 致谢
+`pnpm dev` 会监听变化，每次构建完成后自动同步 `dev/`。两种模式均在静态资源写入完成后再同步，覆盖同名产物，保留目标目录的其他文件。
 
-- 基于 [plugin-sample-vite-svelte](https://github.com/siyuan-note/plugin-sample-vite-svelte/) 模板开发
+默认目标插件目录为 `D:\Notes\Siyuan\Achuan-2\data\plugins`，可通过环境变量 `SIYUAN_PLUGIN_DIR` 覆盖，或修改 `scripts/make_dev_copy.js`。同步失败会单独输出警告，构建产物仍保留；可运行 `pnpm make_dev_copy dist` 重试生产产物同步，开发产物使用 `pnpm make_dev_copy dev`。
 
-## ❤️项目贡献者
+`pnpm typecheck` 检查当前插件入口及其 TypeScript 依赖；模板未使用的示例代码不在此范围内。DOM 测试覆盖层级、截断、块属性保存、异步切换、刷新和清理，不替代思源客户端内的实际交互验证。
 
-<a href="https://github.com/Achuan-2/siyuan-plugin-template/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Achuan-2/siyuan-plugin-template" />
-</a>
+## 致谢
 
-Made with [contrib.rocks](https://contrib.rocks).
-
-
-## ❤️用爱发电
-
-如果喜欢我的插件，欢迎给GitHub仓库点star和微信赞赏，这会激励我继续完善此插件和开发新插件。
-
-
-![image](https://assets.b3logfile.com/siyuan/1610205759005/assets/network-asset-image-20250614123558-fuhir5v.png)
+基于 [plugin-sample-vite-svelte](https://github.com/siyuan-note/plugin-sample-vite-svelte/) 模板开发。
