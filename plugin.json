@@ -1,0 +1,32 @@
+{
+  "name": "siyuan-plugin-list-outline",
+  "author": "Achuan-2",
+  "url": "https://github.com/Achuan-2/siyuan-plugin-list-outline",
+  "version": "0.0.1",
+  "minAppVersion": "3.7.0",
+  "backends": [
+    "all"
+  ],
+  "frontends": [
+    "all"
+  ],
+  "disabledInPublish": true,
+  "displayName": {
+    "default": "List Outline",
+    "zh-CN": "列表大纲"
+  },
+  "description": {
+    "default": "A floating outline for lists, with configurable depth and text length.",
+    "zh-CN": "鼠标悬停列表时显示层级大纲，支持字数限制和列表块独立层级设置。"
+  },
+  "readme": {
+    "default": "README_en.md",
+    "zh-CN": "README.md"
+  },
+  "funding": {
+    "custom": [
+      "https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20241128221208-2024-11-28.png"
+    ]
+  },
+  "keywords": ["list", "outline", "列表", "大纲"]
+}

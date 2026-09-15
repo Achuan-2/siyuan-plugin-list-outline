@@ -1,0 +1,42 @@
+{
+  "name": "siyuan-plugin-list-outline",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "思源笔记列表悬浮大纲，支持层级、字数和列表块独立设置",
+  "repository": "",
+  "homepage": "",
+  "author": "Achuan-2",
+  "license": "MIT",
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.plugin.json",
+    "dev": "cross-env NODE_ENV=development VITE_SOURCEMAP=inline vite build --watch",
+    "build": "cross-env NODE_ENV=production vite build",
+    "make-link": "node --no-warnings ./scripts/make_dev_link.js",
+    "make_dev_copy": "node --no-warnings ./scripts/make_dev_copy.js",
+    "update-version": "node --no-warnings ./scripts/update_version.js",
+    "make-install": "vite build && node --no-warnings ./scripts/make_install.js"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^3.1.0",
+    "@tsconfig/svelte": "^4.0.1",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^20.3.0",
+    "cross-env": "^7.0.3",
+    "fast-glob": "^3.2.12",
+    "glob": "^10.0.0",
+    "js-yaml": "^4.1.0",
+    "jsdom": "^30.0.1",
+    "minimist": "^1.2.8",
+    "rollup-plugin-livereload": "^2.0.5",
+    "sass": "^1.63.3",
+    "siyuan": "1.1.8",
+    "svelte": "^4.2.19",
+    "ts-node": "^10.9.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.1.3",
+    "vite": "^5.2.9",
+    "vite-plugin-static-copy": "^1.0.2",
+    "vite-plugin-zip-pack": "^1.0.5"
+  }
+}

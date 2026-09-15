@@ -1,0 +1,5 @@
+{
+    "extends": "./tsconfig.json",
+    "include": ["src/index.ts", "src/listOutline.ts", "src/outline.ts", "src/defaultSettings.ts", "src/libs/index.d.ts"],
+    "references": []
+}

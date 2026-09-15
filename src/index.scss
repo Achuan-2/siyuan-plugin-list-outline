@@ -1,0 +1,53 @@
+.list-outline-floating {
+    position: fixed;
+    z-index: 8;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    overflow: hidden;
+    color: var(--b3-theme-on-surface);
+    background: var(--b3-theme-background);
+    border: 1px solid var(--b3-border-color);
+    border-radius: 8px;
+    box-shadow: var(--b3-dialog-shadow, 0 4px 20px #0002);
+    font-size: 13px;
+    line-height: 1.5;
+
+    &[hidden] { display: none; }
+
+    &__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--b3-border-color);
+        flex: none;
+        > span { font-weight: 600; white-space: nowrap; }
+        label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+        select { max-width: 160px; min-width: 0; font-size: 12px; }
+    }
+
+    &__body { overflow: auto; min-height: 0; padding: 4px; overscroll-behavior: contain; }
+    &__item {
+        display: block;
+        width: 100%;
+        min-height: 28px;
+        padding: 4px 10px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: start;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: pointer;
+        &:hover, &:focus-visible { background: var(--b3-list-hover); color: var(--b3-theme-primary); }
+        &:focus-visible { outline: 1px solid var(--b3-theme-primary); outline-offset: -1px; }
+    }
+    &__empty, &__status { padding: 8px 10px; color: var(--b3-theme-on-surface-light); font-size: 12px; }
+    &__status { flex: none; border-top: 1px solid var(--b3-border-color); }
+    &__status:empty { display: none; }
+}
