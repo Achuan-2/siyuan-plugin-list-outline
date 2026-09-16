@@ -72,12 +72,14 @@ test("标题和列表上下插入立即渲染并定位，提交可撤销事务�
         for (const direction of ["before", "after"] as const) {
         const env = setup(kind, subtype);
         try {
-            env.dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+            let scrollOptions: any = null;
+            env.dom.window.HTMLElement.prototype.scrollIntoView = function (options: any) { scrollOptions = options; };
             const content = env.dom.window.document.body;
             content.innerHTML = '<div data-node-id="anchor"></div><div data-node-id="section-end"></div>';
             const transactions: any[] = [];
             const id = await insertOutlineSibling(env.target, direction, env.request, env.newID, () => true,
                 operation => insertIntoOutlineEditor(content, operation, (insert, undo) => {
+                    assert.deepEqual(scrollOptions, { block: "center", behavior: "smooth" });
                     assert.ok(content.querySelector(`[data-node-id="${insert.id}"]`), "提交前已渲染新块");
                     const editable = content.querySelector(`[data-node-id="${insert.id}"] [contenteditable="true"]`)!;
                     const selection = env.dom.window.getSelection()!;

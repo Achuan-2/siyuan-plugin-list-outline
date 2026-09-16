@@ -26,7 +26,7 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     let settings = normalizeSettings();
     const controller = new HeadingOutlineController({ getEditors: () => editors,
         getSettings: () => settings,
-        setIncludeLists: async enabled => { settings = { ...settings, headingIncludeLists: enabled }; },
+        setListDepth: async depth => { settings = { ...settings, headingListDepth: depth }; },
         request: async (url, data) => { calls.push({ url, data }); return request ? request(url, data) : url.endsWith("checkBlockFold") ? { isFolded: true } : tree; },
         navigate: (id, folded) => navigations.push({ id, folded }), reportError: () => {},
         openInsertMenu: (event, target) => { event.preventDefault(); menus.push(target); },
@@ -42,8 +42,8 @@ test("旧设置补齐独立开关，关闭任一功能不影响另一功能", ()
     assert.equal(normalizeSettings({ enableHeadingOutline: false }).enableListOutline, true);
     assert.equal(normalizeSettings({ enableListOutline: false }).enableHeadingOutline, true);
     assert.equal(normalizeSettings({ enableHeadingOutline: false }).enableHeadingOutline, false);
-    assert.equal(normalizeSettings().headingIncludeLists, false);
-    assert.equal(normalizeSettings({ headingIncludeLists: true, enableListOutline: false }).headingIncludeLists, true);
+    assert.equal(normalizeSettings().headingListDepth, 0);
+    assert.equal(normalizeSettings({ headingIncludeLists: true, defaultDepth: 4 }).headingListDepth, 4);
 });
 
 const listDOM = (id: string, text: string, children = "") => `<div data-type="NodeListItem" data-node-id="${id}"><div data-type="NodeParagraph"><div contenteditable="true">${text}</div></div>${children}</div>`;
@@ -67,14 +67,15 @@ test("混合目录按文档顺序归入标题，沿用独立层级且排除引�
     } finally { env.cleanup(); }
 });
 
-test("显示列表开关即时生效，关闭不读全文，混合列表支持定位和列表右键菜单", async () => {
+test("列表层级下拉框即时生效，不显示时不读全文，混合列表支持定位和右键菜单", async () => {
     const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: mixedDOM } : url.endsWith("checkBlockFold") ? { isFolded: true } : tree);
     try {
         await settle();
         assert.equal(env.calls.some(call => call.url.endsWith("getBlockDOM")), false);
-        const checkbox = env.panel.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-        assert.ok(checkbox.classList.contains("b3-switch"));
-        checkbox.click();
+        const select = env.panel.querySelector<HTMLSelectElement>('select[aria-label="标题大纲列表层级"]')!;
+        assert.equal(select.value, "0");
+        select.value = "2";
+        select.dispatchEvent(new env.win.Event("change"));
         await settle();
         const row = env.panel.querySelector<HTMLButtonElement>('[data-id="three"]')!;
         assert.ok(row);
@@ -84,11 +85,12 @@ test("显示列表开关即时生效，关闭不读全文，混合列表支持�
         assert.equal(env.navigations.at(-1)?.id, "three");
         row.dispatchEvent(new env.win.MouseEvent("contextmenu", { bubbles: true }));
         assert.equal(env.menus.at(-1)?.kind, "list");
-        env.setSettings({ headingIncludeLists: true, enableListOutline: false });
+        env.setSettings({ headingListDepth: 2, enableListOutline: false });
         await settle();
         assert.ok(env.panel.querySelector('[data-id="three"]'));
         const reads = env.calls.filter(call => call.url.endsWith("getBlockDOM")).length;
-        checkbox.click();
+        select.value = "0";
+        select.dispatchEvent(new env.win.Event("change"));
         await settle();
         assert.equal(env.panel.querySelector('[data-id="three"]'), null);
         assert.equal(env.calls.filter(call => call.url.endsWith("getBlockDOM")).length, reads);
@@ -100,9 +102,9 @@ test("关闭混合目录后，未完成的全文请求不能重新显示列表",
     const env = setup(async url => url.endsWith("getBlockDOM") ? new Promise(resolve => { resolveDOM = resolve; }) : tree);
     try {
         await settle();
-        env.setSettings({ headingIncludeLists: true });
+        env.setSettings({ headingListDepth: 2 });
         await settle();
-        env.setSettings({ headingIncludeLists: false });
+        env.setSettings({ headingListDepth: 0 });
         await settle();
         resolveDOM({ dom: mixedDOM });
         await settle();

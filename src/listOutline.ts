@@ -219,13 +219,24 @@ export class ListOutlineView {
             return false;
         }
         const width = Math.max(0, Math.min(this.expanded ? 300 : 48, right - left));
-        const y = Math.max(top, Math.min(rect.top + 6, bottom - 100));
+        const y = this.expanded
+            ? Math.max(top, Math.min(rect.top + 6, bottom - 100))
+            : Math.max(top, rect.top + 6);
+        const visibleBottom = this.expanded
+            ? bottom
+            : Math.min(bottom, rect.bottom);
+        const availableHeight = visibleBottom - y;
+        if (availableHeight < 12 && !this.expanded) {
+            this.panel.hidden = true;
+            return false;
+        }
+        const maxHeight = Math.max(0, Math.min(420, availableHeight));
         this.panel.style.width = `${width}px`;
         // 尽量放在列表正文右侧留白处，展开也优先向右；空间不足时贴编辑区右边缘。
         const panelLeft = Math.max(left, Math.min(rect.right + 8, right - width));
         this.panel.style.left = `${panelLeft}px`;
         this.panel.style.top = `${y}px`;
-        this.panel.style.maxHeight = `${Math.max(0, Math.min(420, bottom - y))}px`;
+        this.panel.style.maxHeight = `${maxHeight}px`;
         this.panel.hidden = false;
         this.highlight(top, bottom);
         return true;
@@ -299,6 +310,8 @@ export class ListOutlineView {
     private onMutation = (mutations: MutationRecord[]) => {
         if (this.disposed || !this.active) return;
         if (!this.active.isConnected) {
+            clearTimeout(this.refreshTimer);
+            this.requestVersion++;
             this.panel.hidden = true;
             return;
         }
@@ -314,7 +327,9 @@ export class ListOutlineView {
 
     private async loadSnapshot() {
         const active = this.active;
-        if (!active || this.disposed) return;
+        // 剪切整个列表时，编辑器 DOM 会先移除列表，控制器随后才销毁视图。
+        // 不要在这段间隙继续使用已经失效的块 ID 请求内核。
+        if (!active?.isConnected || !this.editor?.isConnected || this.disposed) return;
         const generation = this.generation;
         const version = ++this.requestVersion;
         const id = active.dataset.nodeId!;
@@ -441,6 +456,13 @@ export class ListOutlineController {
     }
 
     private onEditorMutation = () => {
+        // 及时取消已被剪切/删除列表的延迟快照，不能等到下一帧 sync。
+        for (const [list, view] of this.views.entries()) {
+            if (!list.isConnected) {
+                view.destroy();
+                this.views.delete(list);
+            }
+        }
         this.scheduleSync();
     };
 

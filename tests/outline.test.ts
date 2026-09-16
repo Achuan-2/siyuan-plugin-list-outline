@@ -217,6 +217,29 @@ test("编辑后刷新，离开列表块后大纲保持显示，滚动出可视�
     } finally { env.cleanup(); }
 });
 
+test("剪切列表后不再使用已删除的块 ID 请求快照", async () => {
+    const calls: Array<{ url: string; id: string }> = [];
+    const env = setup(async (url, data) => {
+        calls.push({ url, id: data.id });
+        if (url.endsWith("getBlockAttrs")) return {};
+        return { dom: nested };
+    });
+    try {
+        await settle();
+        calls.length = 0;
+        const root = env.win.document.querySelector<HTMLElement>('[data-node-id="root"]')!;
+        const view = Array.from((env.controller as any).views.values())
+            .find((candidate: any) => candidate.active === root);
+        root.remove();
+
+        // 模拟剪切事务与视图清理之间已经排队的延迟刷新。
+        await (view as any).loadSnapshot();
+        await settle();
+        assert.deepEqual(calls, []);
+        assert.equal(env.win.document.querySelector('[data-list-id="root"]'), null);
+    } finally { env.cleanup(); }
+});
+
 test("服务端快照补齐编辑器中尚未渲染的折叠子列表", async () => {
     const env = setup(async url => url.endsWith("getBlockAttrs") ? {} : { dom: nested });
     try {
@@ -485,6 +508,47 @@ test("列表大纲支持关键词搜索过滤、高亮匹配项及 Esc 清空", 
         env.panel.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
         assert.equal(searchInput.value, "");
         assert.equal(env.panel.querySelectorAll("button.list-outline-floating__item").length, 4);
+    } finally { env.cleanup(); }
+});
+
+test("多个列表大纲垂直空间受各自列表块限制，滚动与相邻列表互不重叠", async () => {
+    const env = setup();
+    try {
+        const rootEl = env.win.document.querySelector<HTMLElement>('[data-node-id="root"]')!;
+        const otherEl = env.win.document.querySelector<HTMLElement>('[data-node-id="other"]')!;
+
+        // 场景 1：两个列表都在可视区，各自大纲高度受自身列表 bottom 约束
+        rootEl.getBoundingClientRect = () => ({ x: 40, y: 100, left: 40, right: 800, top: 100, bottom: 250, width: 760, height: 150, toJSON() {} });
+        otherEl.getBoundingClientRect = () => ({ x: 40, y: 300, left: 40, right: 800, top: 300, bottom: 600, width: 760, height: 300, toJSON() {} });
+
+        env.win.document.querySelector('.protyle-content')!.dispatchEvent(new env.win.Event("scroll"));
+        await settle();
+
+        const panels = Array.from(env.win.document.querySelectorAll<HTMLElement>(".list-outline-floating"));
+        const rootPanel = panels.find(p => p.dataset.listId === "root")!;
+        const otherPanel = panels.find(p => p.dataset.listId === "other")!;
+
+        assert.equal(rootPanel.hidden, false);
+        assert.equal(otherPanel.hidden, false);
+
+        const rootTop = parseFloat(rootPanel.style.top);
+        const rootMaxHeight = parseFloat(rootPanel.style.maxHeight);
+        const otherTop = parseFloat(otherPanel.style.top);
+
+        // root 大纲的底部（top + maxHeight）不超过 rootEl 的 bottom（250px），且位于 other 大纲上方
+        assert.ok(rootTop + rootMaxHeight <= 250);
+        assert.ok(rootTop + rootMaxHeight <= otherTop);
+
+        // 场景 2：列表 1 向上滚动即将离开可视区，高度缩减；当剩余可用高度 < 12px 时自动隐藏
+        rootEl.getBoundingClientRect = () => ({ x: 40, y: -400, left: 40, right: 800, top: -400, bottom: 15, width: 760, height: 415, toJSON() {} });
+        otherEl.getBoundingClientRect = () => ({ x: 40, y: 40, left: 40, right: 800, top: 40, bottom: 400, width: 760, height: 360, toJSON() {} });
+
+        env.win.document.querySelector('.protyle-content')!.dispatchEvent(new env.win.Event("scroll"));
+        await settle();
+
+        // 可用高度 = 15 - 8 = 7px < 12px，rootPanel 隐藏，避免残留在编辑区顶部
+        assert.equal(rootPanel.hidden, true);
+        assert.equal(otherPanel.hidden, false);
     } finally { env.cleanup(); }
 });
 

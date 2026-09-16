@@ -4,6 +4,7 @@ import SettingPanel from "./SettingPanel.svelte";
 import { normalizeSettings, type OutlineSettings } from "./defaultSettings";
 import { ListOutlineController } from "./listOutline";
 import { HeadingOutlineController, type HeadingEditor } from "./headingOutline";
+import { HeadingOutlineDockView } from "./headingDock";
 import { insertOutlineSibling, insertIntoOutlineEditor, type OutlineInsertTarget, type OpenInsertMenu } from "./outlineInsert";
 
 const SETTINGS_FILE = "settings.json";
@@ -12,6 +13,7 @@ export default class ListOutlinePlugin extends Plugin {
     settings: OutlineSettings = normalizeSettings();
     private outline?: ListOutlineController;
     private headingOutline?: HeadingOutlineController;
+    private headingDock?: HeadingOutlineDockView;
     private disposed = false;
     private settingsQueue: Promise<unknown> = Promise.resolve();
     private dialogs = new Set<Dialog>();
@@ -26,6 +28,47 @@ export default class ListOutlinePlugin extends Plugin {
             console.error("列表大纲：加载设置失败", error);
         }
         if (this.disposed) return;
+
+        this.addDock({
+            config: {
+                position: "RightTop",
+                size: { width: 260, height: 0 },
+                icon: "iconList",
+                title: "标题大纲",
+            },
+            data: { plugin: this },
+            type: `${this.name}_heading_dock`,
+            init: dock => {
+                this.headingDock = new HeadingOutlineDockView(dock.element as HTMLElement, {
+                    getEditors: this.getHeadingEditors,
+                    getSettings: () => this.settings,
+                    setListDepth: depth => this.saveSettings({ ...this.settings, headingListDepth: depth }),
+                    openInsertMenu: this.openInsertMenu,
+                    request: this.request,
+                    navigate: (id, folded) => {
+                        const mobile = getFrontend().includes("mobile");
+                        const action = mobile ? "cb-get-hl" : "cb-get-focus";
+                        const actions: Parameters<typeof openMobileFileById>[2] = folded
+                            ? [action, "cb-get-all", "cb-get-html", "cb-get-outline"]
+                            : [action, "cb-get-outline", "cb-get-setid", "cb-get-context", "cb-get-html"];
+                        if (mobile) openMobileFileById(this.app, id, actions);
+                        else void openTab({ app: this.app, doc: { id, action: actions } });
+                    },
+                    reportError: message => showMessage(message, 5000, "error"),
+                });
+            },
+            destroy: () => {
+                this.headingDock?.destroy();
+                this.headingDock = undefined;
+            },
+            update: () => {
+                this.headingDock?.syncEditors();
+            },
+            resize: () => {
+                this.headingDock?.scheduleHighlight();
+            },
+        });
+
         for (const event of this.protyleEvents) this.eventBus.on(event, this.onProtyle);
         this.eventBus.on("ws-main", this.onWorkspaceMessage);
         this.syncFeatures();
@@ -35,7 +78,11 @@ export default class ListOutlinePlugin extends Plugin {
 
     private onProtyle = (event: CustomEvent<{ protyle: IProtyle }>) => {
         this.headingOutline?.syncEditors(event.detail.protyle.element);
-        if (event.type.startsWith("loaded-")) this.headingOutline?.scheduleRefresh();
+        this.headingDock?.syncEditors(event.detail.protyle.element);
+        if (event.type.startsWith("loaded-")) {
+            this.headingOutline?.scheduleRefresh();
+            this.headingDock?.scheduleRefresh();
+        }
         this.outline?.scheduleSync();
     };
 
@@ -43,12 +90,14 @@ export default class ListOutlinePlugin extends Plugin {
         // 原生大纲在 savedoc 后重新读取标题，兼顾同步、撤销和标题编号变更。
         if (["savedoc", "transactions", "reload", "rename"].includes(event.detail.cmd)) {
             this.headingOutline?.scheduleRefresh();
+            this.headingDock?.scheduleRefresh();
             this.outline?.scheduleSync();
         }
     };
 
     onLayoutReady() {
         this.headingOutline?.syncEditors();
+        this.headingDock?.syncEditors();
         this.outline?.scheduleSync();
     }
 
@@ -90,7 +139,7 @@ export default class ListOutlinePlugin extends Plugin {
         if (this.settings.enableHeadingOutline && !this.headingOutline) this.headingOutline = new HeadingOutlineController({
             getEditors: this.getHeadingEditors,
             getSettings: () => this.settings,
-            setIncludeLists: enabled => this.saveSettings({ ...this.settings, headingIncludeLists: enabled }),
+            setListDepth: depth => this.saveSettings({ ...this.settings, headingListDepth: depth }),
             openInsertMenu: this.openInsertMenu,
             request: this.request,
             navigate: (id, folded) => {
@@ -110,6 +159,7 @@ export default class ListOutlinePlugin extends Plugin {
         }
         this.outline?.refreshSettings();
         this.headingOutline?.refreshSettings();
+        this.headingDock?.refreshSettings();
     }
 
     onunload() {
@@ -119,6 +169,8 @@ export default class ListOutlinePlugin extends Plugin {
         this.outline = undefined;
         this.headingOutline?.destroy();
         this.headingOutline = undefined;
+        this.headingDock?.destroy();
+        this.headingDock = undefined;
         for (const event of this.protyleEvents) this.eventBus.off(event, this.onProtyle);
         this.eventBus.off("ws-main", this.onWorkspaceMessage);
         this.dialogs.forEach(dialog => dialog.destroy());
@@ -138,8 +190,9 @@ export default class ListOutlinePlugin extends Plugin {
     }
 
     private canInsert(target: OutlineInsertTarget) {
-        if (this.disposed || !(target.kind === "heading" ? this.settings.enableHeadingOutline :
-            this.settings.enableListOutline || (this.settings.enableHeadingOutline && this.settings.headingIncludeLists))) return false;
+        const headingAvailable = this.settings.enableHeadingOutline || this.settings.enableHeadingDock;
+        if (this.disposed || !(target.kind === "heading" ? headingAvailable :
+            this.settings.enableListOutline || (headingAvailable && this.settings.headingListDepth > 0))) return false;
         const protyle = getAllEditor().find(editor => editor?.protyle?.element === target.editor || editor?.protyle?.element.contains(target.editor))?.protyle;
         return !!protyle && protyle.element.isConnected && !protyle.disabled && !protyle.options?.action?.includes("cb-get-history");
     }

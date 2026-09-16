@@ -1,5 +1,5 @@
 import { flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
-import { getDefaultSettings, type OutlineSettings } from "./defaultSettings";
+import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import { createOutlineRow, setOutlineCurrent } from "./outlineView";
 import type { OpenInsertMenu } from "./outlineInsert";
 
@@ -18,7 +18,7 @@ interface Options {
     reportError(message: string): void;
     openInsertMenu?: OpenInsertMenu;
     getSettings?(): OutlineSettings;
-    setIncludeLists?(enabled: boolean): Promise<unknown>;
+    setListDepth?(depth: number): Promise<unknown>;
 }
 
 /** 数据与跳转流程参考思源 layout/dock/Outline.ts；面板使用插件自己的悬浮视图。 */
@@ -26,7 +26,7 @@ export class HeadingOutlineController {
     private panel = document.createElement("aside");
     private body = document.createElement("div");
     private status = document.createElement("div");
-    private includeLists = document.createElement("input");
+    private listDepthSelect = document.createElement("select");
     private editor: HeadingEditor | null = null;
     private entries: HeadingEntry[] = [];
     private expanded = false;
@@ -38,7 +38,7 @@ export class HeadingOutlineController {
     private frame = 0;
     private observer = new MutationObserver(records => {
         // 文本修改只关心标题；插入、删除和容器移动也可能改变标题树。
-        if (records.some(record => this.settings.headingIncludeLists || record.type !== "characterData" ||
+        if (records.some(record => this.settings.headingListDepth > 0 || record.type !== "characterData" ||
             record.target.parentElement?.closest('[data-type="NodeHeading"],h1,h2,h3,h4,h5,h6'))) this.scheduleRefresh();
     });
 
@@ -49,30 +49,40 @@ export class HeadingOutlineController {
         header.className = "list-outline-floating__header";
         const title = document.createElement("span");
         title.textContent = "标题大纲";
+        const locate = document.createElement("button");
+        locate.className = "b3-button b3-button--outline";
+        locate.textContent = "定位";
+        locate.title = "定位当前位置";
+        locate.addEventListener("click", () => this.locateCurrent());
         const refresh = document.createElement("button");
         refresh.className = "b3-button b3-button--outline";
         refresh.textContent = "刷新";
         refresh.addEventListener("click", () => void this.refresh());
-        const label = document.createElement("label");
-        this.includeLists.type = "checkbox";
-        this.includeLists.className = "b3-switch fn__flex-center";
-        this.includeLists.checked = this.settings.headingIncludeLists;
-        this.includeLists.addEventListener("change", async () => {
-            this.includeLists.disabled = true;
+        this.listDepthSelect.className = "b3-select";
+        this.listDepthSelect.setAttribute("aria-label", "标题大纲列表层级");
+        this.listDepthSelect.title = "选择标题大纲中显示的列表层级";
+        for (let depth = 0; depth <= MAX_DEPTH; depth++) {
+            const option = document.createElement("option");
+            option.value = String(depth);
+            option.textContent = depth === 0 ? "不显示列表" : `列表 ${depth} 层`;
+            this.listDepthSelect.add(option);
+        }
+        this.listDepthSelect.value = String(this.settings.headingListDepth);
+        this.listDepthSelect.addEventListener("change", async () => {
+            this.listDepthSelect.disabled = true;
             try {
-                await this.options.setIncludeLists?.(this.includeLists.checked);
+                await this.options.setListDepth?.(Number(this.listDepthSelect.value));
                 if (!this.disposed) await this.refresh();
             } catch (error) {
-                if (!this.disposed) this.options.reportError("显示列表设置保存失败，请重试。");
+                if (!this.disposed) this.options.reportError("列表层级设置保存失败，请重试。");
             } finally {
-                this.includeLists.disabled = false;
-                this.includeLists.checked = this.settings.headingIncludeLists;
+                this.listDepthSelect.disabled = false;
+                this.listDepthSelect.value = String(this.settings.headingListDepth);
             }
         });
-        label.append(this.includeLists, document.createTextNode("显示列表"));
         header.append(title);
-        if (options.setIncludeLists) header.append(label);
-        header.append(refresh);
+        if (options.setListDepth) header.append(this.listDepthSelect);
+        header.append(locate, refresh);
         this.body.className = "list-outline-floating__body";
         this.status.className = "list-outline-floating__status";
         this.status.setAttribute("role", "status");
@@ -160,12 +170,14 @@ export class HeadingOutlineController {
         try {
             const [nodes, snapshot] = await Promise.all([this.options.request("/api/outline/getDocOutline", {
                 id: editor.rootID, preview: editor.preview, ...(editor.notebook ? { notebook: editor.notebook } : {}),
-            }), settings.headingIncludeLists ? this.options.request("/api/block/getBlockDOM", {
+            }), settings.headingListDepth > 0 ? this.options.request("/api/block/getBlockDOM", {
                 id: editor.rootID, ...(editor.notebook ? { notebook: editor.notebook } : {}),
             }) : Promise.resolve(null)]);
             if (this.disposed || version !== this.version) return;
             this.entries = flattenHeadingTree(nodes);
-            if (settings.headingIncludeLists) this.entries = includeListsInHeadingTree(this.entries, snapshot?.dom || "", settings.defaultDepth);
+            if (settings.headingListDepth > 0) {
+                this.entries = includeListsInHeadingTree(this.entries, snapshot?.dom || "", settings.headingListDepth);
+            }
             this.status.textContent = "";
             this.render();
         } catch (error) {
@@ -179,8 +191,8 @@ export class HeadingOutlineController {
     private get settings() { return this.options.getSettings?.() || getDefaultSettings(); }
 
     refreshSettings() {
-        this.includeLists.checked = this.settings.headingIncludeLists;
-        if (!this.settings.headingIncludeLists) {
+        this.listDepthSelect.value = String(this.settings.headingListDepth);
+        if (this.settings.headingListDepth === 0) {
             this.entries = this.entries.filter(entry => entry.kind !== "list");
             this.render();
         }
@@ -283,6 +295,82 @@ export class HeadingOutlineController {
         Object.assign(this.panel.style, { width: `${width}px`, left: `${right - width}px`,
             top: `${top}px`, maxHeight: `${Math.min(480, bottom - top)}px` });
         this.highlight(top);
+    }
+
+    locateCurrent(): string | null {
+        if (!this.editor || this.disposed) return null;
+        const ids = new Set(this.entries.map(entry => entry.id));
+        if (!ids.size) return null;
+
+        let targetId = "";
+
+        // 优先检查光标所在位置或获得焦点的元素
+        const selection = document.getSelection();
+        const focusNode = selection?.focusNode || document.activeElement;
+        if (focusNode && this.editor.content.contains(focusNode instanceof Node ? focusNode : null)) {
+            const focusElement = focusNode instanceof Element ? focusNode : focusNode.parentElement;
+            if (focusElement) {
+                // 1. 如果光标直接在标题或列表项上
+                const block = focusElement.closest<HTMLElement>(
+                    this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
+                        : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id]'
+                );
+                const blockId = block ? (this.editor.preview ? block.id : block.dataset.nodeId) : null;
+                if (blockId && ids.has(blockId)) {
+                    targetId = blockId;
+                } else {
+                    // 2. 如果光标在普通段落或子块中，查找该块上方最近的标题
+                    const cursorTop = focusElement.getBoundingClientRect().top;
+                    const headings = Array.from(this.editor.content.querySelectorAll<HTMLElement>(
+                        this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
+                            : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id]'
+                    )).filter(h => {
+                        const id = this.editor!.preview ? h.id : h.dataset.nodeId!;
+                        return ids.has(id) && h.getClientRects().length > 0;
+                    });
+                    for (const heading of headings) {
+                        if (heading.getBoundingClientRect().top <= cursorTop + 10) {
+                            targetId = this.editor.preview ? heading.id : heading.dataset.nodeId!;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 如果光标不在编辑器内，回退到当前视口可见区域最顶部的标题
+        if (!targetId) {
+            const viewport = this.editor.content.closest(".protyle-content") || this.editor.content;
+            const top = viewport.getBoundingClientRect().top;
+            const headings = Array.from(this.editor.content.querySelectorAll<HTMLElement>(
+                this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
+                    : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id]'
+            )).filter(h => {
+                const id = this.editor!.preview ? h.id : h.dataset.nodeId!;
+                return ids.has(id) && h.getClientRects().length > 0;
+            });
+            for (const heading of headings) {
+                const id = this.editor.preview ? heading.id : heading.dataset.nodeId!;
+                if (!targetId) targetId = id;
+                if (heading.getBoundingClientRect().top <= top + 36) targetId = id;
+            }
+        }
+
+        if (!targetId) return null;
+
+        setOutlineCurrent(this.body, targetId);
+        const targetRow = this.body.querySelector<HTMLElement>(`button[data-id="${targetId}"]`);
+        if (targetRow) {
+            targetRow.scrollIntoView?.({ block: "center", behavior: "smooth" });
+            if (typeof targetRow.animate === "function") {
+                targetRow.animate([
+                    { backgroundColor: "var(--b3-theme-primary-light)" },
+                    { backgroundColor: "transparent" },
+                ], { duration: 1000 });
+            }
+        }
+        return targetId;
     }
 
     private highlight(top: number) {

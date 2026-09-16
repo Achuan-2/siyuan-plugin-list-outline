@@ -29,7 +29,7 @@ export function insertIntoOutlineEditor(content: HTMLElement, operation: Outline
     const block = template.content.firstElementChild as HTMLElement;
     if (operation.nextID) anchor.before(block);
     else anchor.after(block);
-    block.scrollIntoView({ block: "nearest" });
+    block.scrollIntoView({ block: "center", behavior: "smooth" });
     const editable = block.querySelector<HTMLElement>('[contenteditable="true"]');
     if (editable) {
         editable.focus({ preventScroll: true });
