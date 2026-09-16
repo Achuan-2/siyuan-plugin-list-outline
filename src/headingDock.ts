@@ -2,6 +2,7 @@ import { flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import type { HeadingEditor } from "./headingOutline";
 import type { OpenInsertMenu } from "./outlineInsert";
+import { HEADING_OUTLINE_ICON_ID } from "./icons";
 
 export interface HeadingDockOptions {
     getEditors(): HeadingEditor[];
@@ -46,7 +47,7 @@ export class HeadingOutlineDockView {
         logoIcon.classList.add("block__logoicon");
         logoIcon.setAttribute("aria-hidden", "true");
         const logoUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
-        logoUse.setAttribute("href", "#iconList");
+        logoUse.setAttribute("href", `#${HEADING_OUTLINE_ICON_ID}`);
         logoIcon.append(logoUse);
         logo.append(logoIcon, document.createTextNode("标题大纲"));
 

@@ -5,6 +5,7 @@ import { normalizeSettings, type OutlineSettings } from "./defaultSettings";
 import { ListOutlineController } from "./listOutline";
 import { HeadingOutlineController, type HeadingEditor } from "./headingOutline";
 import { HeadingOutlineDockView } from "./headingDock";
+import { HEADING_OUTLINE_ICON, HEADING_OUTLINE_ICON_ID } from "./icons";
 import { insertOutlineSibling, insertIntoOutlineEditor, type OutlineInsertTarget, type OpenInsertMenu } from "./outlineInsert";
 
 const SETTINGS_FILE = "settings.json";
@@ -29,11 +30,12 @@ export default class ListOutlinePlugin extends Plugin {
         }
         if (this.disposed) return;
 
+        this.addIcons(HEADING_OUTLINE_ICON);
         this.addDock({
             config: {
                 position: "RightTop",
                 size: { width: 260, height: 0 },
-                icon: "iconList",
+                icon: HEADING_OUTLINE_ICON_ID,
                 title: "标题大纲",
             },
             data: { plugin: this },
