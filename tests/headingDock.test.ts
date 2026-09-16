@@ -135,7 +135,7 @@ test("标题大纲 Dock：点击定位与右键菜单插入同级", async () => 
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：取消定位按钮并根据鼠标所在位置自动定位高亮", async () => {
+test("标题大纲 Dock：鼠标移入不定位，点击标题或段落才定位高亮", async () => {
     const env = setup();
     try {
         await settle();
@@ -148,10 +148,15 @@ test("标题大纲 Dock：取消定位按钮并根据鼠标所在位置自动定
         h3El.dataset.type = "NodeHeading";
         h3El.dataset.nodeId = "h3";
         h3El.innerHTML = '<div contenteditable="true">三级标题</div>';
+        h3El.getBoundingClientRect = () => ({ ...h1El.getBoundingClientRect(), top: 200 });
         env.editors[0].content.append(h3El);
         let scrolled = false;
         env.container.querySelector<HTMLElement>('button[data-id="h3"]')!.scrollIntoView = () => { scrolled = true; };
         h3El.firstElementChild!.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+        env.dock.syncEditors();
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h1");
+        assert.equal(scrolled, false);
+        h3El.firstElementChild!.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
         assert.equal(scrolled, true);
 
@@ -159,7 +164,10 @@ test("标题大纲 Dock：取消定位按钮并根据鼠标所在位置自动定
         paragraph.dataset.type = "NodeParagraph";
         paragraph.innerHTML = '<div contenteditable="true">普通段落</div>';
         env.editors[0].content.append(paragraph);
+        h1El.click();
         paragraph.firstElementChild!.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h1");
+        paragraph.firstElementChild!.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
     } finally { env.cleanup(); }
 });
@@ -184,8 +192,10 @@ test("标题大纲 Dock：列表下拉框选择不显示或具体显示层级", 
         assert.equal(env.container.querySelector('[data-id="l2"]'), null);
 
         env.editors[0].content.innerHTML = snapshot;
-        env.editors[0].content.querySelector('[data-node-id="l1"] [contenteditable]')!
-            .dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+        const listContent = env.editors[0].content.querySelector('[data-node-id="l1"] [contenteditable]')!;
+        listContent.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+        assert.notEqual(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "l1");
+        listContent.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "l1");
 
         select.value = "0";

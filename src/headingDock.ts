@@ -128,8 +128,8 @@ export class HeadingOutlineDockView {
 
         this.body.addEventListener("click", this.onClick);
         this.body.addEventListener("contextmenu", this.onContextMenu);
-        document.addEventListener("pointerover", this.onEditorPointer);
-        document.addEventListener("focusin", this.onEditorPointer);
+        document.addEventListener("click", this.onEditorInteraction);
+        document.addEventListener("focusin", this.onEditorInteraction);
         window.addEventListener("scroll", this.onScroll, true);
 
         this.observer = new MutationObserver(records => {
@@ -180,7 +180,7 @@ export class HeadingOutlineDockView {
         void this.refresh();
     }
 
-    private onEditorPointer = (event: Event) => {
+    private onEditorInteraction = (event: Event) => {
         if (event.target instanceof HTMLElement && !this.rootElement.contains(event.target)) {
             this.pointerElement = event.target;
             this.syncEditors(event.target);
@@ -438,8 +438,8 @@ export class HeadingOutlineDockView {
         clearInterval(this.heartbeat);
         cancelAnimationFrame(this.frame);
         this.observer.disconnect();
-        document.removeEventListener("pointerover", this.onEditorPointer);
-        document.removeEventListener("focusin", this.onEditorPointer);
+        document.removeEventListener("click", this.onEditorInteraction);
+        document.removeEventListener("focusin", this.onEditorInteraction);
         window.removeEventListener("scroll", this.onScroll, true);
         this.rootElement.remove();
         this.editor = null;
