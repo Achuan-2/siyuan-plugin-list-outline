@@ -1,7 +1,10 @@
 export const HEADING_OUTLINE_ICON_ID = "iconListOutlineHeadingDock";
 
-// H 标记配合树状缩进，区分于思源原生大纲图标。
+// 文档框配合项目符号列表，作为移动端悬浮入口时仍能清楚表达“大纲”。
 export const HEADING_OUTLINE_ICON = `<symbol id="${HEADING_OUTLINE_ICON_ID}" viewBox="0 0 24 24">
-    <path d="M3 3v7m6-7v7M3 6.5h6M13 4h8M13 9h6M4 14v6m0-5h5m-5 5h8M12 15h9m-6 5h6"
-        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="4" y="3" width="16" height="18" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <circle cx="8" cy="8" r="1" fill="currentColor"/>
+    <path d="M11.5 8h5M11.5 12h5M11.5 16h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <circle cx="8" cy="12" r="1" fill="currentColor"/>
+    <circle cx="8" cy="16" r="1" fill="currentColor"/>
 </symbol>`;

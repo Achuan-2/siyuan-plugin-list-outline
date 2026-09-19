@@ -2,6 +2,7 @@ import { flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import { createOutlineRow, setOutlineCurrent } from "./outlineView";
 import type { OpenInsertMenu } from "./outlineInsert";
+import { HEADING_OUTLINE_ICON_ID } from "./icons";
 
 export interface HeadingEditor {
     element: HTMLElement;
@@ -19,6 +20,7 @@ interface Options {
     openInsertMenu?: OpenInsertMenu;
     getSettings?(): OutlineSettings;
     setListDepth?(depth: number): Promise<unknown>;
+    isMobile?(): boolean;
 }
 
 /** 数据与跳转流程参考思源 layout/dock/Outline.ts；面板使用插件自己的悬浮视图。 */
@@ -36,6 +38,7 @@ export class HeadingOutlineController {
     private timer?: ReturnType<typeof setTimeout>;
     private heartbeat: ReturnType<typeof setInterval>;
     private frame = 0;
+    private readonly mobile: boolean;
     private observer = new MutationObserver(records => {
         // 文本修改只关心标题；插入、删除和容器移动也可能改变标题树。
         if (records.some(record => this.settings.headingListDepth > 0 || record.type !== "characterData" ||
@@ -43,8 +46,27 @@ export class HeadingOutlineController {
     });
 
     constructor(private options: Options) {
+        this.mobile = options.isMobile?.() ?? false;
         this.panel.className = "list-outline-floating heading-outline-floating";
+        this.panel.classList.toggle("heading-outline-floating--mobile", this.mobile);
         this.panel.setAttribute("aria-label", "悬浮标题大纲");
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "heading-outline-floating__toggle";
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.setAttribute("aria-label", "打开标题大纲");
+        toggle.title = "打开标题大纲";
+        const toggleIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        toggleIcon.classList.add("heading-outline-floating__toggle-icon");
+        toggleIcon.setAttribute("aria-hidden", "true");
+        const toggleUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        toggleUse.setAttribute("href", `#${HEADING_OUTLINE_ICON_ID}`);
+        toggleIcon.append(toggleUse);
+        toggle.append(toggleIcon);
+        toggle.addEventListener("click", event => {
+            event.stopPropagation();
+            this.setExpanded(!this.expanded);
+        });
         const header = document.createElement("div");
         header.className = "list-outline-floating__header";
         const title = document.createElement("span");
@@ -86,19 +108,25 @@ export class HeadingOutlineController {
         this.body.className = "list-outline-floating__body";
         this.status.className = "list-outline-floating__status";
         this.status.setAttribute("role", "status");
-        this.panel.append(header, this.body, this.status);
+        this.panel.append(toggle, header, this.body, this.status);
         this.panel.hidden = true;
         document.body.append(this.panel);
-        this.panel.addEventListener("pointerenter", () => this.setExpanded(true));
-        this.panel.addEventListener("pointerleave", () => {
-            if (this.menuOpen) return;
-            this.setExpanded(false);
-        });
-        this.panel.addEventListener("focusin", () => this.setExpanded(true));
-        this.panel.addEventListener("focusout", event => {
-            if (this.menuOpen) return;
-            if (!(event.relatedTarget instanceof Node && this.panel.contains(event.relatedTarget)) && !this.panel.matches(":hover")) this.setExpanded(false);
-        });
+        if (!this.mobile) {
+            this.panel.addEventListener("pointerenter", () => this.setExpanded(true));
+            this.panel.addEventListener("pointerleave", () => {
+                if (this.menuOpen) return;
+                this.setExpanded(false);
+            });
+        } else {
+            document.addEventListener("click", this.onDocumentClick);
+        }
+        if (!this.mobile) {
+            this.panel.addEventListener("focusin", () => this.setExpanded(true));
+            this.panel.addEventListener("focusout", event => {
+                if (this.menuOpen) return;
+                if (!(event.relatedTarget instanceof Node && this.panel.contains(event.relatedTarget)) && !this.panel.matches(":hover")) this.setExpanded(false);
+            });
+        }
         this.body.addEventListener("click", this.onClick);
         this.body.addEventListener("contextmenu", this.onContextMenu);
         document.addEventListener("pointerover", this.onEditorPointer);
@@ -145,6 +173,11 @@ export class HeadingOutlineController {
     private onEditorPointer = (event: Event) => {
         if (this.menuOpen) return;
         if (event.target instanceof HTMLElement && !this.panel.contains(event.target)) this.syncEditors(event.target);
+    };
+
+    private onDocumentClick = (event: MouseEvent) => {
+        if (!this.mobile || !this.expanded || !(event.target instanceof Node) || this.panel.contains(event.target)) return;
+        this.setExpanded(false);
     };
 
     private onKeyDown = (event: KeyboardEvent) => {
@@ -232,13 +265,20 @@ export class HeadingOutlineController {
         if (!id) { void this.refresh(); return; }
         if (editor.preview) {
             const heading = Array.from(editor.content.querySelectorAll<HTMLElement>("[id]")).find(node => node.id === id);
-            if (heading) { heading.scrollIntoView({ block: "start" }); return; }
+            if (heading) {
+                heading.scrollIntoView({ block: "start" });
+                if (this.mobile) this.setExpanded(false);
+                return;
+            }
         }
         try {
             // 与原生 Outline 的 checkFold 流程一致，折叠标题需要完整块上下文。
             const result = await this.options.request("/api/block/checkBlockFold", { id,
                 ...(editor.notebook ? { notebook: editor.notebook } : {}) });
-            if (!this.disposed && this.editor === editor) this.options.navigate(id, !!result?.isFolded);
+            if (!this.disposed && this.editor === editor) {
+                this.options.navigate(id, !!result?.isFolded);
+                if (this.mobile) this.setExpanded(false);
+            }
         } catch (error) {
             console.error("悬浮标题大纲：定位失败", error);
             if (!this.disposed) this.options.reportError("大纲条目定位失败，请重试。");
@@ -267,6 +307,13 @@ export class HeadingOutlineController {
     private setExpanded(expanded: boolean) {
         this.expanded = expanded;
         this.panel.classList.toggle("list-outline-floating--expanded", expanded);
+        const toggle = this.panel.querySelector<HTMLButtonElement>(".heading-outline-floating__toggle");
+        if (toggle) {
+            toggle.setAttribute("aria-expanded", String(expanded));
+            toggle.setAttribute("aria-label", expanded ? "关闭标题大纲" : "打开标题大纲");
+            toggle.title = expanded ? "关闭标题大纲" : "打开标题大纲";
+            toggle.hidden = this.mobile && expanded;
+        }
         if (!expanded) this.body.scrollTop = 0;
         this.position();
     }
@@ -278,6 +325,13 @@ export class HeadingOutlineController {
         });
     };
 
+    private getMobileTop(viewport: Element, fallback: number) {
+        const protyle = viewport.closest<HTMLElement>(".protyle");
+        const breadcrumb = protyle?.querySelector<HTMLElement>(":scope > .protyle-breadcrumb");
+        const breadcrumbRect = breadcrumb?.getBoundingClientRect();
+        return breadcrumbRect && breadcrumbRect.bottom > fallback ? breadcrumbRect.bottom + 8 : fallback;
+    }
+
     private position() {
         if (!this.editor || !this.visible(this.editor) || (!this.entries.length && !this.status.textContent)) {
             this.panel.hidden = true;
@@ -287,13 +341,21 @@ export class HeadingOutlineController {
         const rect = viewport.getBoundingClientRect();
         const left = Math.max(8, rect.left);
         const right = Math.min(window.innerWidth - 8, rect.right - 6);
-        const top = Math.max(8, rect.top + 12);
+        let top = Math.max(8, rect.top + 12);
+        if (this.mobile) top = this.getMobileTop(viewport, top);
         const bottom = Math.min(window.innerHeight - 8, rect.bottom - 8);
-        if (right <= left || bottom - top < 30) { this.panel.hidden = true; return; }
+        if (right <= left || bottom - top < (this.mobile ? 52 : 30)) { this.panel.hidden = true; return; }
         this.panel.hidden = false;
-        const width = Math.min(this.expanded ? 300 : 48, right - left);
-        Object.assign(this.panel.style, { width: `${width}px`, left: `${right - width}px`,
-            top: `${top}px`, maxHeight: `${Math.min(480, bottom - top)}px` });
+        const width = Math.min(this.expanded ? (this.mobile ? 320 : 300) : (this.mobile ? 52 : 48), right - left);
+        const maxHeight = Math.min(480, bottom - top);
+        if (this.mobile) {
+            Object.assign(this.panel.style, { width: `${width}px`, left: `${right - width}px`,
+                top: `${top}px`, bottom: "auto",
+                height: this.expanded ? "auto" : "52px", maxHeight: `${maxHeight}px` });
+        } else {
+            Object.assign(this.panel.style, { width: `${width}px`, left: `${right - width}px`,
+                top: `${top}px`, bottom: "auto", height: "auto", maxHeight: `${maxHeight}px` });
+        }
         this.highlight(top);
     }
 
@@ -397,6 +459,7 @@ export class HeadingOutlineController {
         this.observer.disconnect();
         document.removeEventListener("pointerover", this.onEditorPointer);
         document.removeEventListener("focusin", this.onEditorPointer);
+        document.removeEventListener("click", this.onDocumentClick);
         document.removeEventListener("keydown", this.onKeyDown);
         window.removeEventListener("resize", this.schedulePosition);
         window.removeEventListener("scroll", this.schedulePosition, true);

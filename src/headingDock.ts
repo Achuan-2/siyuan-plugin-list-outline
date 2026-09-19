@@ -2,7 +2,6 @@ import { flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import type { HeadingEditor } from "./headingOutline";
 import type { OpenInsertMenu } from "./outlineInsert";
-import { HEADING_OUTLINE_ICON_ID } from "./icons";
 
 export interface HeadingDockOptions {
     getEditors(): HeadingEditor[];
@@ -43,13 +42,7 @@ export class HeadingOutlineDockView {
         this.header.className = "heading-outline-dock__header block__icons";
         const logo = document.createElement("span");
         logo.className = "block__logo";
-        const logoIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        logoIcon.classList.add("block__logoicon");
-        logoIcon.setAttribute("aria-hidden", "true");
-        const logoUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
-        logoUse.setAttribute("href", `#${HEADING_OUTLINE_ICON_ID}`);
-        logoIcon.append(logoUse);
-        logo.append(logoIcon, document.createTextNode("标题大纲"));
+        logo.textContent = "标题大纲";
 
         const space = document.createElement("span");
         space.className = "fn__flex-1";
@@ -160,7 +153,7 @@ export class HeadingOutlineDockView {
 
         if (editor?.element === this.editor?.element && editor?.rootID === this.editor?.rootID &&
             editor?.preview === this.editor?.preview && editor?.content === this.editor?.content) {
-            this.highlight(true);
+            this.highlight();
             return;
         }
         this.version++;
@@ -185,6 +178,7 @@ export class HeadingOutlineDockView {
         if (event.target instanceof HTMLElement && !this.rootElement.contains(event.target)) {
             this.pointerElement = event.target;
             this.syncEditors(event.target);
+            if (event.type === "click") this.highlight(true);
         }
     };
 
@@ -242,15 +236,6 @@ export class HeadingOutlineDockView {
 
     private render() {
         if (this.disposed) return;
-        const settings = this.settings;
-        if (!settings.enableHeadingDock) {
-            this.rootElement.classList.add("heading-outline-dock--disabled");
-            this.status.textContent = "已在插件设置中关闭标题大纲 Dock";
-            this.status.hidden = false;
-            this.body.replaceChildren();
-            return;
-        }
-        this.rootElement.classList.remove("heading-outline-dock--disabled");
 
         if (!this.editor) {
             this.status.textContent = "暂无活动文档";
@@ -333,7 +318,7 @@ export class HeadingOutlineDockView {
         const scrollTop = this.body.scrollTop;
         this.body.replaceChildren(fragment);
         this.body.scrollTop = scrollTop;
-        this.highlight(true);
+        this.highlight();
     }
 
     private onClick = async (event: MouseEvent) => {

@@ -10,7 +10,7 @@ const tree = [{ id: "h1", name: "<strong>一级标题</strong>", subType: "h1", 
 ] }, { id: "h2", name: "第二章", subType: "h2" }];
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
 
-function setup(request?: (url: string, data: Record<string, unknown>) => Promise<any>) {
+function setup(request?: (url: string, data: Record<string, unknown>) => Promise<any>, mobile = false) {
     const dom = new JSDOM('<div class="protyle"><div class="protyle-content"><div class="protyle-wysiwyg"><div data-type="NodeHeading" data-node-id="h1"><div contenteditable="true">标题</div></div></div></div></div>', { pretendToBeVisual: true });
     const win = dom.window;
     for (const key of ["window", "document", "Element", "Node", "HTMLElement", "DOMParser", "MutationObserver"]) {
@@ -25,6 +25,7 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     const menus: any[] = [];
     let settings = normalizeSettings();
     const controller = new HeadingOutlineController({ getEditors: () => editors,
+        isMobile: () => mobile,
         getSettings: () => settings,
         setListDepth: async depth => { settings = { ...settings, headingListDepth: depth }; },
         request: async (url, data) => { calls.push({ url, data }); return request ? request(url, data) : url.endsWith("checkBlockFold") ? { isFolded: true } : tree; },
@@ -165,6 +166,48 @@ test("使用文档 ID 请求完整大纲，悬停展开，折叠标题使用原�
         assert.equal(env.calls.at(-1)?.url, "/api/block/checkBlockFold");
         env.panel.dispatchEvent(new env.win.MouseEvent("pointerleave"));
         assert.equal(env.panel.style.width, "48px");
+    } finally { env.cleanup(); }
+});
+
+test("移动端悬浮标题大纲显示为按钮，点击后展开并可再次收起", async () => {
+    const env = setup(undefined, true);
+    try {
+        await settle();
+        const toggle = env.panel.querySelector<HTMLButtonElement>(".heading-outline-floating__toggle")!;
+        assert.ok(toggle);
+        assert.equal(toggle.getAttribute("aria-label"), "打开标题大纲");
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), false);
+        assert.equal(env.panel.style.width, "52px");
+        assert.equal(env.panel.style.top, "52px");
+        assert.equal(env.panel.style.bottom, "auto");
+        assert.equal(toggle.querySelector("use")?.getAttribute("href"), "#iconListOutlineHeadingDock");
+
+        const breadcrumb = env.win.document.createElement("div");
+        breadcrumb.className = "protyle-breadcrumb";
+        breadcrumb.getBoundingClientRect = () => ({
+            x: 40, y: 80, left: 40, right: 800, top: 80, bottom: 122, width: 760, height: 42, toJSON() {},
+        });
+        env.editors[0].element.insertBefore(breadcrumb, env.editors[0].element.firstChild);
+        env.controller.syncEditors();
+        assert.equal(env.panel.style.top, "130px");
+
+        // 移动端没有悬停展开语义，入口必须由点击触发展开。
+        env.panel.dispatchEvent(new env.win.MouseEvent("pointerenter"));
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), false);
+
+        toggle.click();
+        assert.equal(toggle.getAttribute("aria-expanded"), "true");
+        assert.equal(toggle.getAttribute("aria-label"), "关闭标题大纲");
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), true);
+        assert.equal(env.panel.style.width, "320px");
+        assert.equal(toggle.hidden, true);
+        assert.equal(env.panel.querySelectorAll('.list-outline-floating__item').length, 4);
+
+        toggle.click();
+        assert.equal(toggle.getAttribute("aria-expanded"), "false");
+        assert.equal(toggle.hidden, false);
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), false);
+        assert.equal(env.panel.style.width, "52px");
     } finally { env.cleanup(); }
 });
 

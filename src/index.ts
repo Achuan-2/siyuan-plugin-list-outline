@@ -20,18 +20,13 @@ export default class ListOutlinePlugin extends Plugin {
     private dialogs = new Set<Dialog>();
     private insertMenu?: Menu;
     private inserting = new Set<string>();
+    private headingDockRegistered = false;
 
-    async onload() {
-        this.disposed = false;
-        try {
-            this.settings = normalizeSettings(await this.loadData(SETTINGS_FILE) || {});
-        } catch (error) {
-            console.error("列表大纲：加载设置失败", error);
-        }
-        if (this.disposed) return;
-
-        this.addIcons(HEADING_OUTLINE_ICON);
+    private registerHeadingDock() {
+        if (this.headingDockRegistered) return;
+        const dockId = `${this.name}_heading_dock1`;
         this.addDock({
+            id: dockId,
             config: {
                 position: "RightTop",
                 size: { width: 260, height: 0 },
@@ -39,7 +34,7 @@ export default class ListOutlinePlugin extends Plugin {
                 title: "标题大纲",
             },
             data: { plugin: this },
-            type: `${this.name}_heading_dock`,
+            type: dockId,
             init: dock => {
                 this.headingDock = new HeadingOutlineDockView(dock.element as HTMLElement, {
                     getEditors: this.getHeadingEditors,
@@ -70,6 +65,33 @@ export default class ListOutlinePlugin extends Plugin {
                 this.headingDock?.scheduleHighlight();
             },
         });
+        this.headingDockRegistered = true;
+    }
+
+    private unregisterHeadingDock() {
+        if (!this.headingDockRegistered) return;
+        // 先断开引用，避免 removeDock 触发 destroy 回调时重复销毁视图。
+        const dock = this.headingDock;
+        this.headingDock = undefined;
+        try {
+            this.removeDock(`${this.name}_heading_dock1`);
+        } finally {
+            dock?.destroy();
+            this.headingDockRegistered = false;
+        }
+    }
+
+    async onload() {
+        this.disposed = false;
+        try {
+            this.settings = normalizeSettings(await this.loadData(SETTINGS_FILE) || {});
+        } catch (error) {
+            console.error("列表大纲：加载设置失败", error);
+        }
+        if (this.disposed) return;
+
+        this.addIcons(HEADING_OUTLINE_ICON);
+        if (this.settings.enableHeadingDock) this.registerHeadingDock();
 
         for (const event of this.protyleEvents) this.eventBus.on(event, this.onProtyle);
         this.eventBus.on("ws-main", this.onWorkspaceMessage);
@@ -121,6 +143,8 @@ export default class ListOutlinePlugin extends Plugin {
 
     private syncFeatures() {
         this.insertMenu?.close();
+        if (this.settings.enableHeadingDock) this.registerHeadingDock();
+        else this.unregisterHeadingDock();
         if (this.settings.enableListOutline && !this.outline) this.outline = new ListOutlineController({
             getSettings: () => this.settings,
             request: this.request,
@@ -140,6 +164,7 @@ export default class ListOutlinePlugin extends Plugin {
         }
         if (this.settings.enableHeadingOutline && !this.headingOutline) this.headingOutline = new HeadingOutlineController({
             getEditors: this.getHeadingEditors,
+            isMobile: () => getFrontend().includes("mobile"),
             getSettings: () => this.settings,
             setListDepth: depth => this.saveSettings({ ...this.settings, headingListDepth: depth }),
             openInsertMenu: this.openInsertMenu,
@@ -171,8 +196,7 @@ export default class ListOutlinePlugin extends Plugin {
         this.outline = undefined;
         this.headingOutline?.destroy();
         this.headingOutline = undefined;
-        this.headingDock?.destroy();
-        this.headingDock = undefined;
+        this.unregisterHeadingDock();
         for (const event of this.protyleEvents) this.eventBus.off(event, this.onProtyle);
         this.eventBus.off("ws-main", this.onWorkspaceMessage);
         this.dialogs.forEach(dialog => dialog.destroy());

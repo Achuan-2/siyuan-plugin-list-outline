@@ -56,26 +56,21 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     };
 }
 
-test("标题大纲 Dock：根据设置开关显示内容，关闭时呈现禁用提示", async () => {
+test("标题大纲 Dock：关闭设置时不再显示禁用提示", async () => {
     const env = setup();
     try {
         await settle();
         let rows = env.container.querySelectorAll<HTMLButtonElement>("button.heading-outline-dock__item");
         assert.equal(rows.length, 4);
+        assert.equal(env.container.querySelector(".heading-outline-dock__header .block__logo use"), null);
 
-        // 关闭 Dock 设置
+        // Dock 的注册/移除由插件生命周期处理，视图本身不再渲染“已禁用”提示。
         env.setSettings({ enableHeadingDock: false });
         await settle();
         rows = env.container.querySelectorAll<HTMLButtonElement>("button.heading-outline-dock__item");
-        assert.equal(rows.length, 0);
         const status = env.container.querySelector<HTMLElement>(".heading-outline-dock__status")!;
-        assert.ok(status.textContent?.includes("关闭"));
-
-        // 重新开启 Dock 设置
-        env.setSettings({ enableHeadingDock: true });
-        await settle();
-        rows = env.container.querySelectorAll<HTMLButtonElement>("button.heading-outline-dock__item");
         assert.equal(rows.length, 4);
+        assert.equal(status.textContent?.includes("关闭"), false);
     } finally { env.cleanup(); }
 });
 
@@ -169,6 +164,24 @@ test("标题大纲 Dock：鼠标移入不定位，点击标题或段落才定位
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h1");
         paragraph.firstElementChild!.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
+    } finally { env.cleanup(); }
+});
+
+test("标题大纲 Dock：同步高亮不强制滚动列表到当前标题", async () => {
+    const env = setup();
+    try {
+        await settle();
+        const body = env.container.querySelector<HTMLElement>(".heading-outline-dock__body")!;
+        const currentRow = env.container.querySelector<HTMLElement>('button[data-id="h1"]')!;
+        let scrolled = false;
+        currentRow.scrollIntoView = () => { scrolled = true; };
+        body.scrollTop = 80;
+
+        env.dock.syncEditors();
+
+        assert.equal(scrolled, false);
+        assert.equal(body.scrollTop, 80);
+        assert.equal(currentRow.classList.contains("b3-list-item--focus"), true);
     } finally { env.cleanup(); }
 });
 
