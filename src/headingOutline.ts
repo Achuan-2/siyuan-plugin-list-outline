@@ -23,6 +23,8 @@ interface Options {
     isMobile?(): boolean;
 }
 
+const DESKTOP_FLOATING_RIGHT_GAP = 48;
+
 /** 数据与跳转流程参考思源 layout/dock/Outline.ts；面板使用插件自己的悬浮视图。 */
 export class HeadingOutlineController {
     private panel = document.createElement("aside");
@@ -49,6 +51,7 @@ export class HeadingOutlineController {
         this.mobile = options.isMobile?.() ?? false;
         this.panel.className = "list-outline-floating heading-outline-floating";
         this.panel.classList.toggle("heading-outline-floating--mobile", this.mobile);
+        this.syncDisplayMode();
         this.panel.setAttribute("aria-label", "悬浮标题大纲");
         const toggle = document.createElement("button");
         toggle.type = "button";
@@ -71,14 +74,24 @@ export class HeadingOutlineController {
         header.className = "list-outline-floating__header";
         const title = document.createElement("span");
         title.textContent = "标题大纲";
-        const locate = document.createElement("button");
-        locate.className = "b3-button b3-button--outline";
-        locate.textContent = "定位";
-        locate.title = "定位当前位置";
+        const createActionButton = (iconId: string, label: string) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "b3-button b3-button--outline heading-outline-floating__action";
+            button.setAttribute("aria-label", label);
+            button.title = label;
+            const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            icon.classList.add("heading-outline-floating__action-icon");
+            icon.setAttribute("aria-hidden", "true");
+            const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+            use.setAttribute("href", `#${iconId}`);
+            icon.append(use);
+            button.append(icon);
+            return button;
+        };
+        const locate = createActionButton("iconFocus", "定位当前位置");
         locate.addEventListener("click", () => this.locateCurrent());
-        const refresh = document.createElement("button");
-        refresh.className = "b3-button b3-button--outline";
-        refresh.textContent = "刷新";
+        const refresh = createActionButton("iconRefresh", "刷新标题大纲");
         refresh.addEventListener("click", () => void this.refresh());
         this.listDepthSelect.className = "b3-select";
         this.listDepthSelect.setAttribute("aria-label", "标题大纲列表层级");
@@ -223,7 +236,17 @@ export class HeadingOutlineController {
 
     private get settings() { return this.options.getSettings?.() || getDefaultSettings(); }
 
+    private get iconMode() {
+        return !this.mobile && this.settings.headingOutlineDisplayMode === "icon";
+    }
+
+    private syncDisplayMode() {
+        this.panel.classList.toggle("heading-outline-floating--icon",
+            this.iconMode);
+    }
+
     refreshSettings() {
+        this.syncDisplayMode();
         this.listDepthSelect.value = String(this.settings.headingListDepth);
         if (this.settings.headingListDepth === 0) {
             this.entries = this.entries.filter(entry => entry.kind !== "list");
@@ -267,7 +290,7 @@ export class HeadingOutlineController {
             const heading = Array.from(editor.content.querySelectorAll<HTMLElement>("[id]")).find(node => node.id === id);
             if (heading) {
                 heading.scrollIntoView({ block: "start" });
-                if (this.mobile) this.setExpanded(false);
+                if (this.mobile || this.iconMode) this.setExpanded(false);
                 return;
             }
         }
@@ -277,7 +300,7 @@ export class HeadingOutlineController {
                 ...(editor.notebook ? { notebook: editor.notebook } : {}) });
             if (!this.disposed && this.editor === editor) {
                 this.options.navigate(id, !!result?.isFolded);
-                if (this.mobile) this.setExpanded(false);
+                if (this.mobile || this.iconMode) this.setExpanded(false);
             }
         } catch (error) {
             console.error("悬浮标题大纲：定位失败", error);
@@ -305,6 +328,7 @@ export class HeadingOutlineController {
     };
 
     private setExpanded(expanded: boolean) {
+        const wasExpanded = this.expanded;
         this.expanded = expanded;
         this.panel.classList.toggle("list-outline-floating--expanded", expanded);
         const toggle = this.panel.querySelector<HTMLButtonElement>(".heading-outline-floating__toggle");
@@ -312,10 +336,16 @@ export class HeadingOutlineController {
             toggle.setAttribute("aria-expanded", String(expanded));
             toggle.setAttribute("aria-label", expanded ? "关闭标题大纲" : "打开标题大纲");
             toggle.title = expanded ? "关闭标题大纲" : "打开标题大纲";
-            toggle.hidden = this.mobile && expanded;
+            toggle.hidden = (this.mobile || this.iconMode) && expanded;
         }
         if (!expanded) this.body.scrollTop = 0;
         this.position();
+        if (expanded && !wasExpanded) this.scrollCurrentIntoView();
+    }
+
+    private scrollCurrentIntoView() {
+        const current = this.body.querySelector<HTMLElement>(".list-outline-floating__current");
+        current?.scrollIntoView?.({ block: "center", behavior: "auto" });
     }
 
     private schedulePosition = () => {
@@ -340,15 +370,17 @@ export class HeadingOutlineController {
         const viewport = this.editor.content.closest(".protyle-content") || this.editor.content;
         const rect = viewport.getBoundingClientRect();
         const left = Math.max(8, rect.left);
-        const right = Math.min(window.innerWidth - 8, rect.right - 6);
+        const right = Math.min(window.innerWidth - 8,
+            rect.right - 6 - (this.mobile ? 0 : DESKTOP_FLOATING_RIGHT_GAP));
         let top = Math.max(8, rect.top + 12);
         if (this.mobile) top = this.getMobileTop(viewport, top);
         const bottom = Math.min(window.innerHeight - 8, rect.bottom - 8);
         if (right <= left || bottom - top < (this.mobile ? 52 : 30)) { this.panel.hidden = true; return; }
         this.panel.hidden = false;
-        const width = Math.min(this.expanded ? (this.mobile ? 320 : 300) : (this.mobile ? 52 : 48), right - left);
+        const compactButton = this.mobile || this.iconMode;
+        const width = Math.min(this.expanded ? (this.mobile ? 320 : 300) : (compactButton ? 52 : 48), right - left);
         const maxHeight = Math.min(480, bottom - top);
-        if (this.mobile) {
+        if (compactButton) {
             Object.assign(this.panel.style, { width: `${width}px`, left: `${right - width}px`,
                 top: `${top}px`, bottom: "auto",
                 height: this.expanded ? "auto" : "52px", maxHeight: `${maxHeight}px` });

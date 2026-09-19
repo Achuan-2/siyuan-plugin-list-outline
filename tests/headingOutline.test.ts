@@ -45,6 +45,9 @@ test("旧设置补齐独立开关，关闭任一功能不影响另一功能", ()
     assert.equal(normalizeSettings({ enableHeadingOutline: false }).enableHeadingOutline, false);
     assert.equal(normalizeSettings().headingListDepth, 0);
     assert.equal(normalizeSettings({ headingIncludeLists: true, defaultDepth: 4 }).headingListDepth, 4);
+    assert.equal(normalizeSettings().headingOutlineDisplayMode, "compact");
+    assert.equal(normalizeSettings({ headingOutlineDisplayMode: "icon" }).headingOutlineDisplayMode, "icon");
+    assert.equal(normalizeSettings({ headingOutlineDisplayMode: "invalid" as any }).headingOutlineDisplayMode, "compact");
 });
 
 const listDOM = (id: string, text: string, children = "") => `<div data-type="NodeListItem" data-node-id="${id}"><div data-type="NodeParagraph"><div contenteditable="true">${text}</div></div>${children}</div>`;
@@ -158,7 +161,21 @@ test("使用文档 ID 请求完整大纲，悬停展开，折叠标题使用原�
         assert.equal(env.panel.querySelectorAll('.list-outline-floating__item').length, 4);
         assert.equal(env.panel.querySelector('[data-id="h3"] .list-outline-floating__text')?.textContent, "三级标题");
         assert.equal(env.panel.style.width, "48px");
+        assert.equal(env.panel.style.left, "698px");
+        assert.equal(env.panel.classList.contains("heading-outline-floating--icon"), false);
+        const locate = env.panel.querySelector<HTMLButtonElement>('button[aria-label="定位当前位置"]')!;
+        const refresh = env.panel.querySelector<HTMLButtonElement>('button[aria-label="刷新标题大纲"]')!;
+        assert.equal(locate.textContent, "");
+        assert.equal(locate.querySelector("use")?.getAttribute("href"), "#iconFocus");
+        assert.equal(refresh.textContent, "");
+        assert.equal(refresh.querySelector("use")?.getAttribute("href"), "#iconRefresh");
+        let scrollCount = 0;
+        env.panel.querySelectorAll<HTMLElement>("button[data-id]").forEach(row => {
+            row.scrollIntoView = () => { scrollCount++; };
+        });
+        assert.equal(scrollCount, 0);
         env.panel.dispatchEvent(new env.win.MouseEvent("pointerenter"));
+        assert.equal(scrollCount, 1);
         assert.equal(env.panel.style.width, "300px");
         env.panel.querySelector<HTMLButtonElement>('[data-id="h6"]')!.click();
         await settle();
@@ -166,6 +183,29 @@ test("使用文档 ID 请求完整大纲，悬停展开，折叠标题使用原�
         assert.equal(env.calls.at(-1)?.url, "/api/block/checkBlockFold");
         env.panel.dispatchEvent(new env.win.MouseEvent("pointerleave"));
         assert.equal(env.panel.style.width, "48px");
+        assert.equal(scrollCount, 1);
+    } finally { env.cleanup(); }
+});
+
+test("电脑端悬浮标题大纲支持在线切换省略列表型与图标型", async () => {
+    const env = setup();
+    try {
+        await settle();
+        env.setSettings({ headingOutlineDisplayMode: "icon" });
+        await settle();
+        assert.equal(env.panel.classList.contains("heading-outline-floating--icon"), true);
+        assert.equal(env.panel.style.width, "52px");
+        const toggle = env.panel.querySelector<HTMLButtonElement>(".heading-outline-floating__toggle")!;
+        assert.equal(toggle.hidden, false);
+        toggle.click();
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), true);
+        assert.equal(env.panel.style.width, "300px");
+        assert.equal(toggle.hidden, true);
+        env.panel.dispatchEvent(new env.win.MouseEvent("pointerleave"));
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), false);
+        env.setSettings({ headingOutlineDisplayMode: "compact" });
+        assert.equal(env.panel.classList.contains("heading-outline-floating--icon"), false);
+        assert.ok(env.panel.querySelector(".list-outline-floating__line"));
     } finally { env.cleanup(); }
 });
 
