@@ -217,3 +217,19 @@ test("标题大纲 Dock：列表下拉框选择不显示或具体显示层级", 
         assert.equal(env.container.querySelector('[data-id="l1"]'), null);
     } finally { env.cleanup(); }
 });
+
+test("标题大纲 Dock：纯图片列表项显示图片，alt 不作为可见文本", async () => {
+    const snapshot = '<div data-type="NodeList" data-node-id="list"><div data-type="NodeListItem" data-node-id="image-only">' +
+        '<div data-type="NodeParagraph"><div contenteditable="true"><span data-type="img" class="img">' +
+        '<img src="assets/result.png" alt="不显示的文件名"></span></div></div></div></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree);
+    try {
+        await settle();
+        env.setSettings({ enableHeadingDock: true, headingListDepth: 1 });
+        await settle();
+        const row = env.container.querySelector<HTMLButtonElement>('button[data-id="image-only"]')!;
+        assert.ok(row);
+        assert.equal(row.querySelector("img")?.getAttribute("src"), "assets/result.png");
+        assert.equal(row.querySelector(".heading-outline-dock__text")?.textContent, "");
+    } finally { env.cleanup(); }
+});

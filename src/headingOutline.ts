@@ -179,7 +179,7 @@ export class HeadingOutlineController {
         this.panel.hidden = true;
         if (!editor) return;
         this.observer.observe(editor.content, { childList: true, subtree: true, characterData: true,
-            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "custom-list-outline-depth"] });
+            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "custom-list-outline-depth", "src", "data-src", "alt", "title"] });
         void this.refresh();
     }
 

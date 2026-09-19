@@ -71,6 +71,16 @@ test("混合目录按文档顺序归入标题，沿用独立层级且排除引�
     } finally { env.cleanup(); }
 });
 
+test("标题大纲中的纯图片列表项保留图片及可选 title", () => {
+    const env = setup();
+    try {
+        const imageDOM = listRoot(listDOM("image-only", '<span data-type="img" class="img"><img src="assets/result.png" alt="文件名"><span class="protyle-action__title"><span>结果图</span></span></span>'));
+        const entry = includeListsInHeadingTree([], imageDOM, 1)[0];
+        assert.equal(entry.text, "结果图");
+        assert.deepEqual(entry.images, [{ src: "assets/result.png", alt: "文件名", title: "结果图" }]);
+    } finally { env.cleanup(); }
+});
+
 test("列表层级下拉框即时生效，不显示时不读全文，混合列表支持定位和右键菜单", async () => {
     const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: mixedDOM } : url.endsWith("checkBlockFold") ? { isFolded: true } : tree);
     try {

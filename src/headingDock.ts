@@ -2,6 +2,7 @@ import { flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import type { HeadingEditor } from "./headingOutline";
 import type { OpenInsertMenu } from "./outlineInsert";
+import { createOutlineLabel } from "./outlineView";
 
 export interface HeadingDockOptions {
     getEditors(): HeadingEditor[];
@@ -169,7 +170,7 @@ export class HeadingOutlineDockView {
         }
         this.observer.observe(editor.content, {
             childList: true, subtree: true, characterData: true,
-            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "custom-list-outline-depth"],
+            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "custom-list-outline-depth", "src", "data-src", "alt", "title"],
         });
         void this.refresh();
     }
@@ -279,39 +280,11 @@ export class HeadingOutlineDockView {
             use.setAttribute("href", entry.kind === "list" ? "#iconList" : `#iconH${entry.level}`);
             icon.append(use);
 
-            const text = document.createElement("span");
-            text.className = "b3-list-item__text heading-outline-dock__text";
-
-            if (query) {
-                const kw = this.searchQuery;
-                const lowerText = entry.text.toLowerCase();
-                const lowerKw = kw.toLowerCase();
-                let start = 0;
-                let index = lowerText.indexOf(lowerKw, start);
-                if (index !== -1) {
-                    while (index !== -1) {
-                        if (index > start) {
-                            text.append(document.createTextNode(entry.text.slice(start, index)));
-                        }
-                        const matchSpan = document.createElement("span");
-                        matchSpan.className = "list-outline-floating__match";
-                        matchSpan.textContent = entry.text.slice(index, index + kw.length);
-                        text.append(matchSpan);
-                        start = index + kw.length;
-                        index = lowerText.indexOf(lowerKw, start);
-                    }
-                    if (start < entry.text.length) {
-                        text.append(document.createTextNode(entry.text.slice(start)));
-                    }
-                } else {
-                    text.textContent = entry.text;
-                }
-            } else {
-                text.textContent = entry.text;
-            }
+            const text = createOutlineLabel(entry, this.searchQuery,
+                "b3-list-item__text heading-outline-dock__text");
 
             item.append(icon, text);
-            item.title = entry.text;
+            if (!entry.images?.length || entry.images.some(image => image.title)) item.title = entry.text;
             item.setAttribute("aria-label", `第 ${entry.depth} 层：${entry.text}`);
             fragment.append(item);
         }

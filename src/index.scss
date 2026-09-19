@@ -130,6 +130,35 @@
     &--expanded .list-outline-floating__current { background: var(--b3-list-hover); }
 }
 
+.outline-entry__label--images {
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+}
+
+.outline-entry__image {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 120px;
+    max-height: 56px;
+    flex: none;
+    object-fit: contain;
+    border-radius: 4px;
+}
+
+.outline-entry__image-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.list-outline-floating--expanded .outline-entry__label--images,
+.heading-outline-dock .outline-entry__label--images {
+    display: flex;
+}
+
 .heading-outline-floating {
     z-index: 9;
     &__icon { display: none; width: 14px; height: 14px; fill: currentColor; flex: none; margin-right: 6px; }

@@ -1,5 +1,60 @@
 import type { OutlineEntry } from "./outline";
 
+export function createOutlineLabel(entry: OutlineEntry, highlightKeyword?: string,
+    className = "list-outline-floating__text"): HTMLSpanElement {
+    const label = document.createElement("span");
+    label.className = className;
+    if (entry.images?.length) {
+        label.classList.add("outline-entry__label--images");
+        for (const image of entry.images) {
+            const element = document.createElement("img");
+            element.className = "outline-entry__image";
+            element.src = image.src;
+            element.alt = image.alt;
+            element.loading = "lazy";
+            element.draggable = false;
+            label.append(element);
+        }
+        const title = entry.images.map(image => image.title).filter(Boolean).join(" ");
+        if (title) {
+            const titleElement = document.createElement("span");
+            titleElement.className = "outline-entry__image-title";
+            titleElement.textContent = title;
+            label.append(titleElement);
+        }
+        return label;
+    }
+
+    const kw = highlightKeyword?.trim();
+    if (kw) {
+        const lowerText = entry.text.toLowerCase();
+        const lowerKw = kw.toLowerCase();
+        let start = 0;
+        let index = lowerText.indexOf(lowerKw, start);
+        if (index !== -1) {
+            while (index !== -1) {
+                if (index > start) {
+                    label.append(document.createTextNode(entry.text.slice(start, index)));
+                }
+                const matchSpan = document.createElement("span");
+                matchSpan.className = "list-outline-floating__match";
+                matchSpan.textContent = entry.text.slice(index, index + kw.length);
+                label.append(matchSpan);
+                start = index + kw.length;
+                index = lowerText.indexOf(lowerKw, start);
+            }
+            if (start < entry.text.length) {
+                label.append(document.createTextNode(entry.text.slice(start)));
+            }
+        } else {
+            label.textContent = entry.text;
+        }
+    } else {
+        label.textContent = entry.text;
+    }
+    return label;
+}
+
 /** 两种大纲共用线条、标题和截断样式。 */
 export function createOutlineRow(entry: OutlineEntry, highlightKeyword?: string): HTMLButtonElement {
     const row = document.createElement("button");
@@ -11,37 +66,9 @@ export function createOutlineRow(entry: OutlineEntry, highlightKeyword?: string)
     const line = document.createElement("span");
     line.className = "list-outline-floating__line";
     line.setAttribute("aria-hidden", "true");
-    const text = document.createElement("span");
-    text.className = "list-outline-floating__text";
-    const kw = highlightKeyword?.trim();
-    if (kw) {
-        const lowerText = entry.text.toLowerCase();
-        const lowerKw = kw.toLowerCase();
-        let start = 0;
-        let index = lowerText.indexOf(lowerKw, start);
-        if (index !== -1) {
-            while (index !== -1) {
-                if (index > start) {
-                    text.append(document.createTextNode(entry.text.slice(start, index)));
-                }
-                const matchSpan = document.createElement("span");
-                matchSpan.className = "list-outline-floating__match";
-                matchSpan.textContent = entry.text.slice(index, index + kw.length);
-                text.append(matchSpan);
-                start = index + kw.length;
-                index = lowerText.indexOf(lowerKw, start);
-            }
-            if (start < entry.text.length) {
-                text.append(document.createTextNode(entry.text.slice(start)));
-            }
-        } else {
-            text.textContent = entry.text;
-        }
-    } else {
-        text.textContent = entry.text;
-    }
+    const text = createOutlineLabel(entry, highlightKeyword);
     row.append(line, text);
-    row.title = entry.text;
+    if (!entry.images?.length || entry.images.some(image => image.title)) row.title = entry.text;
     row.setAttribute("aria-label", `第 ${entry.depth} 层：${entry.text}`);
     return row;
 }

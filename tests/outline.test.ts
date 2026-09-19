@@ -27,12 +27,37 @@ test("仅列表项生成层级，父标题不包含子列表、附加段落和�
     assert.deepEqual(extractOutline(document.body.firstElementChild as HTMLElement, 1).map(entry => entry.id), ["one", "four"]);
 });
 
-test("空项、图片、公式、任务标记与 HTML 文本", () => {
-    const document = new JSDOM(list("root", item("empty", "\u200b") + item("image", '<img alt="图片说明">') +
+test("空项、纯图片、公式、任务标记与 HTML 文本", () => {
+    const image = '<span data-type="img" class="img"><img src="assets/plain.png" alt="图片说明"></span>';
+    const titledImage = '<span data-type="img" class="img"><img data-src="assets/titled.png" alt="文件名"><span class="protyle-action__title"><span>降噪结果</span></span></span>';
+    const document = new JSDOM(list("root", item("empty", "\u200b") + item("image", image) + item("titled-image", titledImage) +
         item("math", '<span data-type="inline-math" data-content="x+y"><span>渲染副本</span></span>') + item("html", '&lt;img onerror=alert(1)&gt;'))).window.document;
-    assert.deepEqual(extractOutline(document.body.firstElementChild as HTMLElement, 2).map(entry => entry.text), [
-        "（空列表项）", "图片说明", "x+y", "<img onerror=alert(1)>",
+    const entries = extractOutline(document.body.firstElementChild as HTMLElement, 2);
+    assert.deepEqual(entries.map(entry => entry.text), [
+        "（空列表项）", "图片", "降噪结果", "x+y", "<img onerror=alert(1)>",
     ]);
+    assert.deepEqual(entries[1].images, [{ src: "assets/plain.png", alt: "图片说明" }]);
+    assert.deepEqual(entries[2].images, [{ src: "assets/titled.png", alt: "文件名", title: "降噪结果" }]);
+});
+
+test("纯图片列表项显示缩略图，仅在存在 title 时显示标题", () => {
+    const env = setup();
+    try {
+        const plain = createOutlineRow({ id: "plain", text: "图片", depth: 1,
+            images: [{ src: "assets/plain.png", alt: "不显示的 alt" }] });
+        const titled = createOutlineRow({ id: "titled", text: "结果图", depth: 1,
+            images: [{ src: "assets/titled.png", alt: "也不显示的 alt", title: "结果图" }] });
+        env.panel.append(plain, titled);
+
+        assert.equal(plain.querySelector("img")?.getAttribute("src"), "assets/plain.png");
+        assert.equal(plain.querySelector("img")?.getAttribute("alt"), "不显示的 alt");
+        assert.equal(plain.querySelector(".outline-entry__image-title"), null);
+        assert.equal(plain.querySelector(".list-outline-floating__text")?.textContent, "");
+        assert.equal(plain.hasAttribute("title"), false);
+        assert.equal(titled.querySelector(".outline-entry__image-title")?.textContent, "结果图");
+        assert.equal(titled.querySelector(".list-outline-floating__text")?.textContent, "结果图");
+        assert.equal(titled.title, "结果图");
+    } finally { env.cleanup(); }
 });
 
 test("跳过引述块中的列表及其后代，保留正常子列表", () => {
@@ -551,5 +576,3 @@ test("多个列表大纲垂直空间受各自列表块限制，滚动与相邻�
         assert.equal(otherPanel.hidden, false);
     } finally { env.cleanup(); }
 });
-
-

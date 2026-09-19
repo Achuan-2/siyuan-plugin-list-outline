@@ -106,7 +106,7 @@ export class ListOutlineView {
         this.observer = new MutationObserver(this.onMutation);
         this.observer.observe(this.active, {
             childList: true, subtree: true, characterData: true, attributes: true,
-            attributeFilter: [DEPTH_ATTRIBUTE, "fold", "data-type", "data-content"],
+            attributeFilter: [DEPTH_ATTRIBUTE, "fold", "data-type", "data-content", "src", "data-src", "alt", "title"],
         });
         this.resizeObserver = new ResizeObserver(this.schedulePosition);
         this.resizeObserver.observe(this.active);

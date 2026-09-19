@@ -9,6 +9,22 @@ export interface OutlineEntry {
     id: string;
     text: string;
     depth: number;
+    images?: OutlineImage[];
+}
+
+export interface OutlineImage {
+    src: string;
+    alt: string;
+    title?: string;
+}
+
+function normalizedText(element?: Element | null): string {
+    return (element?.textContent || "").replace(/[\u200b\ufeff]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function imageTitle(image: HTMLImageElement): string {
+    return image.getAttribute("title")?.trim() ||
+        image.closest('[data-type="img"], .img')?.querySelector<HTMLElement>('.protyle-action__title span')?.textContent?.trim() || "";
 }
 
 export function blockDepth(value: string | null): number | null {
@@ -52,11 +68,22 @@ export function extractOutline(root: HTMLElement, maxDepth: number): OutlineEntr
                     !element.closest('.protyle-attr, .protyle-action, [data-type="NodeCodeBlock"], [data-type="NodeTable"]'));
             const clone = content?.cloneNode(true) as HTMLElement | undefined;
             clone?.querySelectorAll('.protyle-attr, .protyle-action, script, style, .img__net').forEach(node => node.remove());
-            clone?.querySelectorAll('img').forEach(img => img.replaceWith(img.getAttribute('alt') || "图片"));
             clone?.querySelectorAll('[data-type="inline-math"]').forEach(math => math.replaceWith(math.getAttribute("data-content") || math.textContent || ""));
-            const text = (clone?.textContent || "").replace(/[\u200b\ufeff]/g, "").replace(/\s+/g, " ").trim();
+            const imageElements = Array.from(clone?.querySelectorAll<HTMLImageElement>('img') || []);
+            const textOnlyClone = clone?.cloneNode(true) as HTMLElement | undefined;
+            textOnlyClone?.querySelectorAll('img, .protyle-action__title').forEach(node => node.remove());
+            const isImageOnly = imageElements.length > 0 && !normalizedText(textOnlyClone);
+            const images = isImageOnly ? imageElements.flatMap(image => {
+                const src = image.getAttribute("data-src") || image.getAttribute("src") || "";
+                const title = imageTitle(image);
+                return src ? [{ src, alt: image.getAttribute("alt") || "图片", ...(title ? { title } : {}) }] : [];
+            }) : [];
+            clone?.querySelectorAll('.protyle-action__title').forEach(node => node.remove());
+            clone?.querySelectorAll('img').forEach(img => img.replaceWith(img.getAttribute('alt') || "图片"));
+            const text = images.length ? images.map(image => image.title).filter(Boolean).join(" ") || "图片" : normalizedText(clone);
             const id = item.getAttribute("data-node-id");
-            if (id) entries.push({ id, text: text || "（空列表项）", depth });
+            if (id) entries.push({ id, text: text || "（空列表项）", depth,
+                ...(images.length ? { images } : {}) });
             // 只有嵌套列表增加层级；引述块中的列表整体跳过。
             for (const child of Array.from(item.querySelectorAll(LIST_SELECTOR))) {
                 if (child.parentElement?.closest(ITEM_SELECTOR) === item &&
@@ -95,4 +122,3 @@ export function hasChildBlocks(root: HTMLElement): boolean {
     }
     return false;
 }
-
