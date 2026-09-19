@@ -240,3 +240,33 @@ test("标题大纲 Dock：纯图片列表项显示图片，alt 不作为可见�
         assert.equal(row.querySelector(".heading-outline-dock__text")?.textContent, "");
     } finally { env.cleanup(); }
 });
+
+test("标题大纲 Dock：显示并定位嵌入块里的列表项", async () => {
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        '<div data-type="NodeBlockQueryEmbed" data-node-id="embed-one"></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree);
+    try {
+        env.editors[0].content.innerHTML = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+            '<div data-type="NodeBlockQueryEmbed" data-node-id="embed-one"><div class="protyle-wysiwyg__embed">' +
+            '<div data-type="NodeList" data-node-id="embedded-list"><div data-type="NodeListItem" data-node-id="embedded-item">' +
+            '<div data-type="NodeParagraph"><div contenteditable="true">嵌入列表项</div></div></div></div></div></div>';
+        const target = env.editors[0].content.querySelector<HTMLElement>('[data-node-id="embedded-item"]')!;
+        let scrolled = false;
+        target.scrollIntoView = () => { scrolled = true; };
+        env.setSettings({ enableHeadingDock: true, headingListDepth: 2 });
+        await new Promise(resolve => setTimeout(resolve, 680));
+
+        const row = env.container.querySelector<HTMLButtonElement>('[data-id="embedded-item"]')!;
+        assert.ok(row);
+        assert.equal(row.dataset.embedId, "embed-one");
+        row.click();
+        await settle();
+        assert.equal(scrolled, true);
+        assert.equal(env.navigations.length, 0);
+
+        const event = new env.win.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+        row.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, true);
+        assert.equal(env.menus.length, 0);
+    } finally { env.cleanup(); }
+});

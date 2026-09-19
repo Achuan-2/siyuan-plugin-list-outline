@@ -1,4 +1,4 @@
-import { flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
+import { findEmbeddedOutlineTarget, flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import type { HeadingEditor } from "./headingOutline";
 import type { OpenInsertMenu } from "./outlineInsert";
@@ -215,7 +215,8 @@ export class HeadingOutlineDockView {
             if (this.disposed || version !== this.version) return;
             this.entries = flattenHeadingTree(nodes);
             if (settings.headingListDepth > 0) {
-                this.entries = includeListsInHeadingTree(this.entries, snapshot?.dom || "", settings.headingListDepth);
+                this.entries = includeListsInHeadingTree(this.entries, snapshot?.dom || "", settings.headingListDepth,
+                    editor.content);
             }
             this.status.textContent = "";
             this.render();
@@ -272,6 +273,7 @@ export class HeadingOutlineDockView {
             item.type = "button";
             item.className = "b3-list-item heading-outline-dock__item";
             item.dataset.id = entry.id;
+            if (entry.embedId) item.dataset.embedId = entry.embedId;
             item.style.paddingLeft = `${12 + (entry.depth - 1) * 16}px`;
 
             const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -302,6 +304,15 @@ export class HeadingOutlineDockView {
         if (!row || !editor) return;
         const id = row.dataset.id!;
         if (!id) { void this.refresh(); return; }
+        if (row.dataset.embedId) {
+            const target = findEmbeddedOutlineTarget(editor.content, id, row.dataset.embedId);
+            if (target?.getClientRects().length) {
+                target.scrollIntoView({ block: "center", behavior: "smooth" });
+                target.animate?.([{ backgroundColor: "var(--b3-theme-primary-light)" },
+                    { backgroundColor: "transparent" }], { duration: 1000 });
+                return;
+            }
+        }
         if (editor.preview) {
             const heading = Array.from(editor.content.querySelectorAll<HTMLElement>("[id]")).find(node => node.id === id);
             if (heading) { heading.scrollIntoView({ block: "center", behavior: "smooth" }); return; }
@@ -321,8 +332,8 @@ export class HeadingOutlineDockView {
         const row = (event.target as Element).closest<HTMLButtonElement>("button[data-id]");
         if (!row?.dataset.id || !this.editor) return;
         const rootID = this.editor.rootID;
-        const kind = this.entries.find(entry => entry.id === row.dataset.id)?.kind || "heading";
-        if (kind === "tab") {
+        const kind = this.entries.find(entry => entry.id === row.dataset.id && entry.embedId === row.dataset.embedId)?.kind || "heading";
+        if (kind === "tab" || row.dataset.embedId) {
             event.preventDefault();
             event.stopPropagation();
             return;

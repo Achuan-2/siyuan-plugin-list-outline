@@ -130,6 +130,17 @@ test("同一列表内移动保持根列表，非编辑器区域不触发", () =>
     assert.equal(findList(document.querySelector('[data-node-id="outside-item"]')!), null);
 });
 
+test("嵌入结果中的列表作为独立根列表，不并入外层正文列表", () => {
+    const embedded = `<div data-type="NodeBlockQueryEmbed" data-node-id="embed"><div class="protyle-wysiwyg__embed">${list("embedded-root",
+        item("embedded-item", "嵌入列表项"))}</div></div>`;
+    const document = new JSDOM(`<div class="protyle-wysiwyg">${list("outer", item("outer-item", "外层", embedded))}</div>`).window.document;
+    const editor = document.querySelector(".protyle-wysiwyg")!;
+    assert.deepEqual(findRootLists(editor).map(node => node.dataset.nodeId), ["outer", "embedded-root"]);
+    assert.equal(findList(document.querySelector('[data-node-id="embedded-item"]')!)?.dataset.nodeId, "embedded-root");
+    assert.deepEqual(extractOutline(document.querySelector<HTMLElement>('[data-node-id="outer"]')!, 3).map(entry => entry.id),
+        ["outer-item"]);
+});
+
 function setup(request?: (url: string, data: any) => Promise<any>, getSettings?: () => any) {
     const dom = new JSDOM(`<div class="protyle-content"><div class="protyle-wysiwyg">${nested}${list("other", item("other-item", "另一列表"))}</div></div>`, { pretendToBeVisual: true });
     const win = dom.window;
@@ -214,6 +225,25 @@ test("悬浮大纲识别页签块标题，点击条目切换原生页签", async
         const menuEvent = new env.win.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
         panel.querySelector<HTMLButtonElement>('button[data-id="tab-one"]')!.dispatchEvent(menuEvent);
         assert.equal(menuEvent.defaultPrevented, true);
+        assert.equal(env.menus.length, 0);
+    } finally { env.cleanup(); }
+});
+
+test("嵌入块里的列表生成独立悬浮大纲，右键不提供写入菜单", async () => {
+    const env = setup();
+    try {
+        const editor = env.win.document.querySelector<HTMLElement>(".protyle-wysiwyg")!;
+        editor.insertAdjacentHTML("beforeend", `<div data-type="NodeBlockQueryEmbed" data-node-id="embed"><div class="protyle-wysiwyg__embed">${list("embedded-root",
+            item("embedded-item", "嵌入列表项"))}</div></div>`);
+        env.controller.sync();
+        await settle();
+
+        const panel = env.win.document.querySelector<HTMLElement>('[data-list-id="embedded-root"]')!;
+        assert.ok(panel);
+        assert.equal(panel.querySelector('[data-id="embedded-item"]')?.textContent, "嵌入列表项");
+        const event = new env.win.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+        panel.querySelector<HTMLButtonElement>('[data-id="embedded-item"]')!.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, true);
         assert.equal(env.menus.length, 0);
     } finally { env.cleanup(); }
 });

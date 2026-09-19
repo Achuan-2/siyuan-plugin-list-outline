@@ -54,6 +54,8 @@ const listDOM = (id: string, text: string, children = "") => `<div data-type="No
 const listRoot = (items: string, attrs = "") => `<div data-type="NodeList" data-node-id="root-${items.length}" ${attrs}>${items}</div>`;
 const tabDOM = (id: string, title: string, children = "") => `<div class="tab-item" data-type="NodeTabItem" data-node-id="${id}"><div class="tab-item-info"><div data-type="NodeParagraph" tabs-title="true"><div class="tab-item-title" contenteditable="true">${title}</div></div></div><div class="tab-item-content">${children}</div></div>`;
 const tabsRoot = (id: string, items: string) => `<div class="tabs" data-type="NodeTabs" data-node-id="${id}">${items}</div>`;
+const embedBlock = (id: string, results = "") => `<div data-type="NodeBlockQueryEmbed" data-node-id="${id}">${results}</div>`;
+const embedResult = (content: string) => `<div class="protyle-wysiwyg__embed">${content}</div>`;
 const mixedDOM = listRoot(listDOM("intro", "开头列表")) + '<div data-type="NodeHeading" data-node-id="h1"></div>' +
     listRoot(listDOM("one", "第一项", listRoot(listDOM("two", "子项"))), 'custom-list-outline-depth="1"') +
     '<div data-type="NodeHeading" data-node-id="h3"></div>' + listRoot(listDOM("three", "第二节列表", listRoot(listDOM("four", "嵌套项")))) +
@@ -70,6 +72,51 @@ test("混合目录按文档顺序归入标题，沿用独立层级且排除引�
         assert.equal(entries.find(entry => entry.id === "one")?.kind, "list");
         assert.equal(entries.find(entry => entry.id === "one")?.text, "第一项");
         assert.equal(includeListsInHeadingTree([], listRoot(listDOM("only", "纯列表文档")), 3)[0].id, "only");
+    } finally { env.cleanup(); }
+});
+
+test("标题大纲把当前编辑器已渲染的嵌入列表合并到文档快照", () => {
+    const env = setup();
+    try {
+        const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' + embedBlock("embed-one") +
+            '<div data-type="NodeHeading" data-node-id="h3"></div>';
+        env.editors[0].content.innerHTML = snapshot.replace(embedBlock("embed-one"), embedBlock("embed-one", embedResult(
+            listRoot(listDOM("embedded-one", "嵌入一级", listRoot(listDOM("embedded-two", "嵌入二级")))))));
+        const entries = includeListsInHeadingTree(flattenHeadingTree(tree).slice(0, 2), snapshot, 2,
+            env.editors[0].content);
+        assert.deepEqual(entries.map(({ id, depth, embedId }) => ({ id, depth, embedId })), [
+            { id: "h1", depth: 1, embedId: undefined },
+            { id: "embedded-one", depth: 2, embedId: "embed-one" },
+            { id: "embedded-two", depth: 3, embedId: "embed-one" },
+            { id: "h3", depth: 2, embedId: undefined },
+        ]);
+    } finally { env.cleanup(); }
+});
+
+test("悬浮标题大纲点击嵌入列表项定位当前渲染副本，且不提供插入菜单", async () => {
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' + embedBlock("embed-one");
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree);
+    try {
+        env.editors[0].content.innerHTML = snapshot.replace(embedBlock("embed-one"), embedBlock("embed-one",
+            embedResult(listRoot(listDOM("embedded-one", "嵌入列表项")))));
+        let scrolled = false;
+        env.editors[0].content.querySelector<HTMLElement>('[data-node-id="embedded-one"]')!.scrollIntoView = () => { scrolled = true; };
+        env.setSettings({ headingListDepth: 2 });
+        await new Promise(resolve => setTimeout(resolve, 680));
+
+        const row = env.panel.querySelector<HTMLButtonElement>('[data-id="embedded-one"]')!;
+        assert.ok(row);
+        assert.equal(row.dataset.embedId, "embed-one");
+        row.click();
+        await settle();
+        assert.equal(scrolled, true);
+        assert.equal(env.navigations.length, 0);
+        assert.equal(env.calls.some(call => call.url.endsWith("checkBlockFold")), false);
+
+        const event = new env.win.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+        row.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, true);
+        assert.equal(env.menus.length, 0);
     } finally { env.cleanup(); }
 });
 

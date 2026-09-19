@@ -5,6 +5,7 @@ export const LIST_SELECTOR = '[data-type="NodeList"][data-node-id]';
 export const TABS_SELECTOR = '[data-type="NodeTabs"][data-node-id]';
 export const OUTLINE_CONTAINER_SELECTOR = `${LIST_SELECTOR}, ${TABS_SELECTOR}`;
 export const OUTLINE_ITEM_SELECTOR = '[data-type="NodeListItem"], [data-type="NodeTabItem"]';
+export const EMBED_RESULT_SELECTOR = ".protyle-wysiwyg__embed";
 const QUOTE_SELECTOR = '[data-type="NodeBlockquote"], blockquote';
 
 export interface OutlineEntry {
@@ -39,10 +40,12 @@ export function blockDepth(value: string | null): number | null {
 export function findList(target: Element): HTMLElement | null {
     const editor = target.closest(".protyle-wysiwyg");
     if (!editor) return null;
+    const embedResult = target.closest(EMBED_RESULT_SELECTOR);
     let list = target.closest<HTMLElement>(OUTLINE_CONTAINER_SELECTOR);
     let result: HTMLElement | null = null;
     // 子列表和嵌套页签属于同一份大纲；在子项间移动时不切换悬浮面板。
-    while (list && editor.contains(list)) {
+    // 嵌入结果是独立的显示边界，不能继续归入外层正文列表。
+    while (list && editor.contains(list) && list.closest(EMBED_RESULT_SELECTOR) === embedResult) {
         if (!list.closest(QUOTE_SELECTOR)) result = list;
         list = list.parentElement?.closest<HTMLElement>(OUTLINE_CONTAINER_SELECTOR);
     }
@@ -54,7 +57,8 @@ export function findRootLists(container: Element): HTMLElement[] {
     return lists.filter(list => {
         if (list.closest(QUOTE_SELECTOR)) return false;
         const parentList = list.parentElement?.closest(OUTLINE_CONTAINER_SELECTOR);
-        return !parentList || !container.contains(parentList);
+        return !parentList || !container.contains(parentList) ||
+            parentList.closest(EMBED_RESULT_SELECTOR) !== list.closest(EMBED_RESULT_SELECTOR);
     });
 }
 
@@ -95,7 +99,8 @@ export function extractOutline(root: HTMLElement, maxDepth: number): OutlineEntr
             // 只有嵌套列表或页签增加层级；引述块中的容器整体跳过。
             for (const child of Array.from(item.querySelectorAll(OUTLINE_CONTAINER_SELECTOR))) {
                 if (child.parentElement?.closest(OUTLINE_ITEM_SELECTOR) === item &&
-                    child.parentElement?.closest(OUTLINE_CONTAINER_SELECTOR) === list) visit(child, depth + 1);
+                    child.parentElement?.closest(OUTLINE_CONTAINER_SELECTOR) === list &&
+                    child.closest(EMBED_RESULT_SELECTOR) === list.closest(EMBED_RESULT_SELECTOR)) visit(child, depth + 1);
             }
         }
     }

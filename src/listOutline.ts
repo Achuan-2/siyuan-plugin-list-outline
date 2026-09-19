@@ -442,7 +442,7 @@ export class ListOutlineView {
         const target = Array.from(this.active.querySelectorAll<HTMLElement>(OUTLINE_ITEM_SELECTOR))
             .find(node => node.dataset.nodeId === row.dataset.id);
         // 页签项暂不复用“插入同级列表项”菜单，避免生成错误的 NodeListItem。
-        if (target?.matches('[data-type="NodeTabItem"]')) {
+        if (target?.matches('[data-type="NodeTabItem"]') || this.active.closest(".protyle-wysiwyg__embed")) {
             event.preventDefault();
             event.stopPropagation();
             return;

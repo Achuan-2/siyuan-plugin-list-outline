@@ -1,4 +1,4 @@
-import { flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
+import { findEmbeddedOutlineTarget, flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import { createOutlineRow, setOutlineCurrent } from "./outlineView";
 import type { OpenInsertMenu } from "./outlineInsert";
@@ -223,7 +223,8 @@ export class HeadingOutlineController {
             if (this.disposed || version !== this.version) return;
             this.entries = flattenHeadingTree(nodes);
             if (settings.headingListDepth > 0) {
-                this.entries = includeListsInHeadingTree(this.entries, snapshot?.dom || "", settings.headingListDepth);
+                this.entries = includeListsInHeadingTree(this.entries, snapshot?.dom || "", settings.headingListDepth,
+                    editor.content);
             }
             this.status.textContent = "";
             this.render();
@@ -262,6 +263,7 @@ export class HeadingOutlineController {
         const fragment = document.createDocumentFragment();
         for (const entry of this.entries) {
             const row = createOutlineRow(entry);
+            if (entry.embedId) row.dataset.embedId = entry.embedId;
             const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             icon.classList.add("heading-outline-floating__icon");
             icon.setAttribute("aria-hidden", "true");
@@ -288,6 +290,16 @@ export class HeadingOutlineController {
         if (!row || !editor) return;
         const id = row.dataset.id!;
         if (!id) { void this.refresh(); return; }
+        if (row.dataset.embedId) {
+            const target = findEmbeddedOutlineTarget(editor.content, id, row.dataset.embedId);
+            if (target?.getClientRects().length) {
+                target.scrollIntoView({ block: "center", behavior: "smooth" });
+                target.animate?.([{ backgroundColor: "var(--b3-theme-primary-light)" },
+                    { backgroundColor: "transparent" }], { duration: 1000 });
+                if (this.mobile || this.iconMode) this.setExpanded(false);
+                return;
+            }
+        }
         if (editor.preview) {
             const heading = Array.from(editor.content.querySelectorAll<HTMLElement>("[id]")).find(node => node.id === id);
             if (heading) {
@@ -314,8 +326,8 @@ export class HeadingOutlineController {
         const row = (event.target as Element).closest<HTMLButtonElement>("button[data-id]");
         if (!row?.dataset.id || !this.editor) return;
         const rootID = this.editor.rootID;
-        const kind = this.entries.find(entry => entry.id === row.dataset.id)?.kind || "heading";
-        if (kind === "tab") {
+        const kind = this.entries.find(entry => entry.id === row.dataset.id && entry.embedId === row.dataset.embedId)?.kind || "heading";
+        if (kind === "tab" || row.dataset.embedId) {
             event.preventDefault();
             event.stopPropagation();
             return;
