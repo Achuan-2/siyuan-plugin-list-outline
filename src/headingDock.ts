@@ -54,7 +54,7 @@ export class HeadingOutlineDockView {
         for (let depth = 0; depth <= MAX_DEPTH; depth++) {
             const option = document.createElement("option");
             option.value = String(depth);
-            option.textContent = depth === 0 ? "不显示列表" : `列表 ${depth} 层`;
+            option.textContent = depth === 0 ? "不显示列表/页签" : `列表/页签 ${depth} 层`;
             this.listDepthSelect.add(option);
         }
         this.listDepthSelect.value = String(this.settings.headingListDepth);
@@ -170,7 +170,8 @@ export class HeadingOutlineDockView {
         }
         this.observer.observe(editor.content, {
             childList: true, subtree: true, characterData: true,
-            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "custom-list-outline-depth", "src", "data-src", "alt", "title"],
+            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "custom-list-outline-depth", "src", "data-src", "alt", "title",
+                "tabs-title", "tabs-active-id", "data-tabs-hidden"],
         });
         void this.refresh();
     }
@@ -229,7 +230,7 @@ export class HeadingOutlineDockView {
     refreshSettings() {
         this.listDepthSelect.value = String(this.settings.headingListDepth);
         if (this.settings.headingListDepth === 0) {
-            this.entries = this.entries.filter(entry => entry.kind !== "list");
+            this.entries = this.entries.filter(entry => !["list", "tab"].includes(entry.kind || ""));
             this.render();
         }
         void this.refresh();
@@ -277,7 +278,8 @@ export class HeadingOutlineDockView {
             icon.classList.add("b3-list-item__graphic", "heading-outline-dock__icon");
             icon.setAttribute("aria-hidden", "true");
             const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-            use.setAttribute("href", entry.kind === "list" ? "#iconList" : `#iconH${entry.level}`);
+            use.setAttribute("href", entry.kind === "tab" ? "#iconTabItem" :
+                entry.kind === "list" ? "#iconList" : `#iconH${entry.level}`);
             icon.append(use);
 
             const text = createOutlineLabel(entry, this.searchQuery,
@@ -320,6 +322,11 @@ export class HeadingOutlineDockView {
         if (!row?.dataset.id || !this.editor) return;
         const rootID = this.editor.rootID;
         const kind = this.entries.find(entry => entry.id === row.dataset.id)?.kind || "heading";
+        if (kind === "tab") {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
         this.options.openInsertMenu?.(event, {
             id: row.dataset.id, kind, editor: this.editor.element, notebook: this.editor.notebook,
         }, () => {
@@ -338,7 +345,7 @@ export class HeadingOutlineDockView {
         if (!this.editor || !ids.size) return "";
         const selector = this.editor.preview
             ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
-            : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id]';
+            : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], [data-type="NodeTabItem"][data-node-id]';
         const nodes = Array.from(this.editor.content.querySelectorAll<HTMLElement>(selector)).filter(node => {
             const id = this.editor!.preview ? node.id : node.dataset.nodeId!;
             return ids.has(id) && node.getClientRects().length > 0;

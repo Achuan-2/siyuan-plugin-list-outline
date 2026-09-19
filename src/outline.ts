@@ -2,7 +2,9 @@ import { MAX_DEPTH } from "./defaultSettings";
 
 export const DEPTH_ATTRIBUTE = "custom-list-outline-depth";
 export const LIST_SELECTOR = '[data-type="NodeList"][data-node-id]';
-const ITEM_SELECTOR = '[data-type="NodeListItem"]';
+export const TABS_SELECTOR = '[data-type="NodeTabs"][data-node-id]';
+export const OUTLINE_CONTAINER_SELECTOR = `${LIST_SELECTOR}, ${TABS_SELECTOR}`;
+export const OUTLINE_ITEM_SELECTOR = '[data-type="NodeListItem"], [data-type="NodeTabItem"]';
 const QUOTE_SELECTOR = '[data-type="NodeBlockquote"], blockquote';
 
 export interface OutlineEntry {
@@ -10,6 +12,7 @@ export interface OutlineEntry {
     text: string;
     depth: number;
     images?: OutlineImage[];
+    kind?: "heading" | "list" | "tab";
 }
 
 export interface OutlineImage {
@@ -36,21 +39,21 @@ export function blockDepth(value: string | null): number | null {
 export function findList(target: Element): HTMLElement | null {
     const editor = target.closest(".protyle-wysiwyg");
     if (!editor) return null;
-    let list = target.closest<HTMLElement>(LIST_SELECTOR);
+    let list = target.closest<HTMLElement>(OUTLINE_CONTAINER_SELECTOR);
     let result: HTMLElement | null = null;
-    // 子列表属于同一份大纲；在子项间移动时不切换悬浮面板。
+    // 子列表和嵌套页签属于同一份大纲；在子项间移动时不切换悬浮面板。
     while (list && editor.contains(list)) {
         if (!list.closest(QUOTE_SELECTOR)) result = list;
-        list = list.parentElement?.closest<HTMLElement>(LIST_SELECTOR);
+        list = list.parentElement?.closest<HTMLElement>(OUTLINE_CONTAINER_SELECTOR);
     }
     return result;
 }
 
 export function findRootLists(container: Element): HTMLElement[] {
-    const lists = Array.from(container.querySelectorAll<HTMLElement>(LIST_SELECTOR));
+    const lists = Array.from(container.querySelectorAll<HTMLElement>(OUTLINE_CONTAINER_SELECTOR));
     return lists.filter(list => {
         if (list.closest(QUOTE_SELECTOR)) return false;
-        const parentList = list.parentElement?.closest(LIST_SELECTOR);
+        const parentList = list.parentElement?.closest(OUTLINE_CONTAINER_SELECTOR);
         return !parentList || !container.contains(parentList);
     });
 }
@@ -59,13 +62,18 @@ export function extractOutline(root: HTMLElement, maxDepth: number): OutlineEntr
     const entries: OutlineEntry[] = [];
     function visit(list: Element, depth: number) {
         if (depth > maxDepth || list.closest(QUOTE_SELECTOR)) return;
+        const isTabs = list.matches(TABS_SELECTOR);
+        const directItemSelector = isTabs ? '[data-type="NodeTabItem"]' : '[data-type="NodeListItem"]';
         for (const item of Array.from(list.children)) {
-            if (!item.matches(ITEM_SELECTOR)) continue;
-            // 仅取本列表项自己的首个文本块，不把子列表和附加段落拼入标题。
-            const content = Array.from(item.querySelectorAll<HTMLElement>('[contenteditable="true"]'))
-                .find(element => element.closest(ITEM_SELECTOR) === item &&
-                    !element.closest(QUOTE_SELECTOR) &&
-                    !element.closest('.protyle-attr, .protyle-action, [data-type="NodeCodeBlock"], [data-type="NodeTable"]'));
+            if (!item.matches(directItemSelector)) continue;
+            // 列表项取自己的首个文本块；页签项只取原始标题，不能把页签正文拼进大纲。
+            const content = isTabs
+                ? item.querySelector<HTMLElement>(":scope > .tab-item-info > .tab-item-title, " +
+                    ':scope > .tab-item-info > [tabs-title] > .tab-item-title')
+                : Array.from(item.querySelectorAll<HTMLElement>('[contenteditable="true"]'))
+                    .find(element => element.closest(OUTLINE_ITEM_SELECTOR) === item &&
+                        !element.closest(QUOTE_SELECTOR) &&
+                        !element.closest('.protyle-attr, .protyle-action, [data-type="NodeCodeBlock"], [data-type="NodeTable"]'));
             const clone = content?.cloneNode(true) as HTMLElement | undefined;
             clone?.querySelectorAll('.protyle-attr, .protyle-action, script, style, .img__net').forEach(node => node.remove());
             clone?.querySelectorAll('[data-type="inline-math"]').forEach(math => math.replaceWith(math.getAttribute("data-content") || math.textContent || ""));
@@ -82,12 +90,12 @@ export function extractOutline(root: HTMLElement, maxDepth: number): OutlineEntr
             clone?.querySelectorAll('img').forEach(img => img.replaceWith(img.getAttribute('alt') || "图片"));
             const text = images.length ? images.map(image => image.title).filter(Boolean).join(" ") || "图片" : normalizedText(clone);
             const id = item.getAttribute("data-node-id");
-            if (id) entries.push({ id, text: text || "（空列表项）", depth,
-                ...(images.length ? { images } : {}) });
-            // 只有嵌套列表增加层级；引述块中的列表整体跳过。
-            for (const child of Array.from(item.querySelectorAll(LIST_SELECTOR))) {
-                if (child.parentElement?.closest(ITEM_SELECTOR) === item &&
-                    child.parentElement?.closest(LIST_SELECTOR) === list) visit(child, depth + 1);
+            if (id) entries.push({ id, text: text || (isTabs ? "（空页签）" : "（空列表项）"), depth,
+                ...(images.length ? { images } : {}), ...(isTabs ? { kind: "tab" as const } : {}) });
+            // 只有嵌套列表或页签增加层级；引述块中的容器整体跳过。
+            for (const child of Array.from(item.querySelectorAll(OUTLINE_CONTAINER_SELECTOR))) {
+                if (child.parentElement?.closest(OUTLINE_ITEM_SELECTOR) === item &&
+                    child.parentElement?.closest(OUTLINE_CONTAINER_SELECTOR) === list) visit(child, depth + 1);
             }
         }
     }
@@ -97,12 +105,12 @@ export function extractOutline(root: HTMLElement, maxDepth: number): OutlineEntr
 
 export function hasChildBlocks(root: HTMLElement): boolean {
     if (!root || !root.querySelectorAll) return false;
-    const items = Array.from(root.querySelectorAll<HTMLElement>(ITEM_SELECTOR));
+    const items = Array.from(root.querySelectorAll<HTMLElement>(OUTLINE_ITEM_SELECTOR));
     if (!items.length) return false;
 
     for (const item of items) {
         // 1. 包含嵌套子列表或引述块
-        if (item.querySelector(LIST_SELECTOR) || item.querySelector(QUOTE_SELECTOR)) {
+        if (item.querySelector(OUTLINE_CONTAINER_SELECTOR) || item.querySelector(QUOTE_SELECTOR)) {
             return true;
         }
         // 2. 包含代码块、超级块、表格、公式块、HTML块、嵌入块等复合子块
@@ -112,9 +120,9 @@ export function hasChildBlocks(root: HTMLElement): boolean {
         // 3. 包含多个直接内容块（例如两个或更多段落）
         const childBlocks = Array.from(item.querySelectorAll<HTMLElement>('[data-type]')).filter(el => {
             if (el === item) return false;
-            if (el.closest(ITEM_SELECTOR) !== item) return false;
+            if (el.closest(OUTLINE_ITEM_SELECTOR) !== item) return false;
             const type = el.getAttribute("data-type") || "";
-            return type.startsWith("Node") && type !== "NodeListItem";
+            return type.startsWith("Node") && !["NodeListItem", "NodeTabItem"].includes(type);
         });
         if (childBlocks.length > 1) {
             return true;

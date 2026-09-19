@@ -99,7 +99,7 @@ export class HeadingOutlineController {
         for (let depth = 0; depth <= MAX_DEPTH; depth++) {
             const option = document.createElement("option");
             option.value = String(depth);
-            option.textContent = depth === 0 ? "不显示列表" : `列表 ${depth} 层`;
+            option.textContent = depth === 0 ? "不显示列表/页签" : `列表/页签 ${depth} 层`;
             this.listDepthSelect.add(option);
         }
         this.listDepthSelect.value = String(this.settings.headingListDepth);
@@ -179,7 +179,8 @@ export class HeadingOutlineController {
         this.panel.hidden = true;
         if (!editor) return;
         this.observer.observe(editor.content, { childList: true, subtree: true, characterData: true,
-            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "custom-list-outline-depth", "src", "data-src", "alt", "title"] });
+            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "custom-list-outline-depth", "src", "data-src", "alt", "title",
+                "tabs-title", "tabs-active-id", "data-tabs-hidden"] });
         void this.refresh();
     }
 
@@ -249,7 +250,7 @@ export class HeadingOutlineController {
         this.syncDisplayMode();
         this.listDepthSelect.value = String(this.settings.headingListDepth);
         if (this.settings.headingListDepth === 0) {
-            this.entries = this.entries.filter(entry => entry.kind !== "list");
+            this.entries = this.entries.filter(entry => !["list", "tab"].includes(entry.kind || ""));
             this.render();
         }
         // 立即使旧请求失效，避免关闭列表后被未完成的混合大纲请求覆盖。
@@ -265,7 +266,8 @@ export class HeadingOutlineController {
             icon.classList.add("heading-outline-floating__icon");
             icon.setAttribute("aria-hidden", "true");
             const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-            use.setAttribute("href", entry.kind === "list" ? "#iconList" : `#iconH${entry.level}`);
+            use.setAttribute("href", entry.kind === "tab" ? "#iconTabItem" :
+                entry.kind === "list" ? "#iconList" : `#iconH${entry.level}`);
             icon.append(use);
             row.insertBefore(icon, row.lastChild);
             fragment.append(row);
@@ -313,6 +315,11 @@ export class HeadingOutlineController {
         if (!row?.dataset.id || !this.editor) return;
         const rootID = this.editor.rootID;
         const kind = this.entries.find(entry => entry.id === row.dataset.id)?.kind || "heading";
+        if (kind === "tab") {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
         this.menuOpen = true;
         this.setExpanded(true);
         this.options.openInsertMenu?.(event, { id: row.dataset.id, kind, editor: this.editor.element,
@@ -407,7 +414,7 @@ export class HeadingOutlineController {
                 // 1. 如果光标直接在标题或列表项上
                 const block = focusElement.closest<HTMLElement>(
                     this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
-                        : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id]'
+                        : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], [data-type="NodeTabItem"][data-node-id]'
                 );
                 const blockId = block ? (this.editor.preview ? block.id : block.dataset.nodeId) : null;
                 if (blockId && ids.has(blockId)) {
@@ -417,7 +424,7 @@ export class HeadingOutlineController {
                     const cursorTop = focusElement.getBoundingClientRect().top;
                     const headings = Array.from(this.editor.content.querySelectorAll<HTMLElement>(
                         this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
-                            : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id]'
+                            : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], [data-type="NodeTabItem"][data-node-id]'
                     )).filter(h => {
                         const id = this.editor!.preview ? h.id : h.dataset.nodeId!;
                         return ids.has(id) && h.getClientRects().length > 0;
@@ -439,7 +446,7 @@ export class HeadingOutlineController {
             const top = viewport.getBoundingClientRect().top;
             const headings = Array.from(this.editor.content.querySelectorAll<HTMLElement>(
                 this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
-                    : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id]'
+                    : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], [data-type="NodeTabItem"][data-node-id]'
             )).filter(h => {
                 const id = this.editor!.preview ? h.id : h.dataset.nodeId!;
                 return ids.has(id) && h.getClientRects().length > 0;
@@ -471,7 +478,7 @@ export class HeadingOutlineController {
         if (!this.editor) return;
         const ids = new Set(this.entries.map(entry => entry.id));
         let current = "";
-        const headings = this.editor.content.querySelectorAll<HTMLElement>(this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]" : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id]');
+        const headings = this.editor.content.querySelectorAll<HTMLElement>(this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]" : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], [data-type="NodeTabItem"][data-node-id]');
         for (const heading of Array.from(headings)) {
             const id = this.editor.preview ? heading.id : heading.dataset.nodeId!;
             if (!ids.has(id) || !heading.getClientRects().length) continue;

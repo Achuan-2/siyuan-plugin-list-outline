@@ -1,5 +1,6 @@
 import { MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
-import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, findList, findRootLists, hasChildBlocks, LIST_SELECTOR } from "./outline";
+import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, findList, findRootLists, hasChildBlocks,
+    OUTLINE_CONTAINER_SELECTOR, OUTLINE_ITEM_SELECTOR, TABS_SELECTOR } from "./outline";
 import { createOutlineRow, setOutlineCurrent } from "./outlineView";
 import type { OpenInsertMenu } from "./outlineInsert";
 
@@ -41,20 +42,21 @@ export class ListOutlineView {
     ) {
         this.source = active;
         this.override = blockDepth(active.getAttribute(DEPTH_ATTRIBUTE));
+        const containerName = active.matches(TABS_SELECTOR) ? "页签" : "列表";
         this.panel.className = "list-outline-floating";
-        this.panel.setAttribute("aria-label", "列表大纲");
+        this.panel.setAttribute("aria-label", `${containerName}大纲`);
         this.panel.dataset.listId = active.dataset.nodeId || "";
         this.panel.hidden = true;
 
         const header = document.createElement("div");
         header.className = "list-outline-floating__header";
         const title = document.createElement("span");
-        title.textContent = "列表大纲";
+        title.textContent = `${containerName}大纲`;
         const label = document.createElement("label");
         label.textContent = "层级";
         this.select.className = "b3-select";
-        this.select.setAttribute("aria-label", "当前列表的大纲层级");
-        this.select.title = "单独设置当前列表，自动保存到列表块属性";
+        this.select.setAttribute("aria-label", `当前${containerName}块的大纲层级`);
+        this.select.title = `单独设置当前${containerName}块，自动保存到块属性`;
         this.select.add(new Option("默认", ""));
         for (let depth = 1; depth <= MAX_DEPTH; depth++) this.select.add(new Option(`${depth} 层`, String(depth)));
         label.append(this.select);
@@ -71,8 +73,8 @@ export class ListOutlineView {
 
         this.searchInput.className = "b3-text-field b3-text-field--text list-outline-floating__search-input";
         this.searchInput.type = "search";
-        this.searchInput.placeholder = "搜索列表项…";
-        this.searchInput.setAttribute("aria-label", "搜索列表项");
+        this.searchInput.placeholder = `搜索${containerName}项…`;
+        this.searchInput.setAttribute("aria-label", `搜索${containerName}项`);
         searchContainer.append(searchIcon, this.searchInput);
 
         this.body.className = "list-outline-floating__body";
@@ -106,7 +108,8 @@ export class ListOutlineView {
         this.observer = new MutationObserver(this.onMutation);
         this.observer.observe(this.active, {
             childList: true, subtree: true, characterData: true, attributes: true,
-            attributeFilter: [DEPTH_ATTRIBUTE, "fold", "data-type", "data-content", "src", "data-src", "alt", "title"],
+            attributeFilter: [DEPTH_ATTRIBUTE, "fold", "data-type", "data-content", "src", "data-src", "alt", "title",
+                "tabs-title", "tabs-active-id", "data-tabs-hidden"],
         });
         this.resizeObserver = new ResizeObserver(this.schedulePosition);
         this.resizeObserver.observe(this.active);
@@ -123,6 +126,17 @@ export class ListOutlineView {
 
     get isMenuOpen(): boolean {
         return this.menuOpen;
+    }
+
+    private updateContainerLabels() {
+        const containerName = this.active.matches(TABS_SELECTOR) ? "页签" : "列表";
+        this.panel.setAttribute("aria-label", `${containerName}大纲`);
+        const title = this.panel.querySelector<HTMLElement>(".list-outline-floating__header > span");
+        if (title) title.textContent = `${containerName}大纲`;
+        this.select.setAttribute("aria-label", `当前${containerName}块的大纲层级`);
+        this.select.title = `单独设置当前${containerName}块，自动保存到块属性`;
+        this.searchInput.placeholder = `搜索${containerName}项…`;
+        this.searchInput.setAttribute("aria-label", `搜索${containerName}项`);
     }
 
     private onPointerOver = (event: PointerEvent) => {
@@ -176,7 +190,13 @@ export class ListOutlineView {
         if (!element || !this.active.contains(element)) return;
         // 引述内容不生成大纲项，也不成为当前位置。
         if (element.closest('[data-type="NodeBlockquote"], blockquote')) return;
-        const item = element.closest<HTMLElement>('[data-type="NodeListItem"]');
+        const tabID = element.closest<HTMLElement>('.tabs-tab[data-tab-id]')?.dataset.tabId;
+        const item = element.closest<HTMLElement>(OUTLINE_ITEM_SELECTOR);
+        if (tabID) {
+            this.currentItemID = tabID;
+            this.schedulePosition();
+            return;
+        }
         if (!item || !this.active.contains(item)) return;
         this.currentItemID = item.dataset.nodeId || "";
         this.schedulePosition();
@@ -246,9 +266,10 @@ export class ListOutlineView {
         if (!this.active) return;
         const rows = this.body.querySelectorAll<HTMLElement>("button[data-id]");
         const ids = new Set(Array.from(rows, row => row.dataset.id!));
-        const items = Array.from(this.active.querySelectorAll<HTMLElement>('[data-type="NodeListItem"]'));
+        const items = Array.from(this.active.querySelectorAll<HTMLElement>(OUTLINE_ITEM_SELECTOR));
         const visible = (item: HTMLElement) => item.getClientRects().length > 0 &&
             !item.closest('[data-type="NodeBlockquote"], blockquote') &&
+            !item.closest('[data-type="NodeTabItem"][data-tabs-hidden="true"]') &&
             !item.parentElement?.closest('[fold="1"]');
         let item = items.find(item => item.dataset.nodeId === this.currentItemID && visible(item) &&
             item.getBoundingClientRect().bottom > top && item.getBoundingClientRect().top < bottom);
@@ -263,7 +284,7 @@ export class ListOutlineView {
         }
         // 未显示的深层子项回退到大纲中可见的最近父列表项。
         while (item && !ids.has(item.dataset.nodeId!)) {
-            item = item.parentElement?.closest<HTMLElement>('[data-type="NodeListItem"]');
+            item = item.parentElement?.closest<HTMLElement>(OUTLINE_ITEM_SELECTOR);
             if (item && !this.active.contains(item)) item = null;
         }
         setOutlineCurrent(this.body, item?.dataset.nodeId || "");
@@ -271,6 +292,7 @@ export class ListOutlineView {
 
     private render() {
         if (!this.active || !this.source) return;
+        this.updateContainerLabels();
         const settings = this.options.getSettings();
         this.select.options[0].textContent = `默认（${settings.defaultDepth} 层）`;
         this.select.value = this.override === null ? "" : String(this.override);
@@ -293,7 +315,7 @@ export class ListOutlineView {
         if (!allEntries.length) {
             const empty = document.createElement("div");
             empty.className = "list-outline-floating__empty";
-            empty.textContent = "暂无列表项";
+            empty.textContent = this.active.matches(TABS_SELECTOR) ? "暂无页签项" : "暂无列表项";
             fragment.append(empty);
         } else if (!entries.length) {
             const empty = document.createElement("div");
@@ -340,7 +362,7 @@ export class ListOutlineView {
         if (this.disposed || generation !== this.generation || version !== this.requestVersion) return;
         if (dom.status === "fulfilled" && dom.value?.dom) {
             const parsed = new DOMParser().parseFromString(dom.value.dom, "text/html");
-            const root = Array.from(parsed.querySelectorAll<HTMLElement>(LIST_SELECTOR)).find(node => node.dataset.nodeId === id);
+            const root = Array.from(parsed.querySelectorAll<HTMLElement>(OUTLINE_CONTAINER_SELECTOR)).find(node => node.dataset.nodeId === id);
             if (root) this.source = root;
         }
         if (attrs.status === "fulfilled" && !this.saving.has(id)) {
@@ -369,7 +391,7 @@ export class ListOutlineView {
             await this.options.request("/api/attr/setBlockAttrs", { id, attrs: { [DEPTH_ATTRIBUTE]: value } });
             if (this.disposed) return;
             // 同一列表可能同时在多个编辑器中打开，只同步这一个自定义属性。
-            document.querySelectorAll<HTMLElement>(LIST_SELECTOR).forEach(node => {
+            document.querySelectorAll<HTMLElement>(OUTLINE_CONTAINER_SELECTOR).forEach(node => {
                 if (node.dataset.nodeId !== id) return;
                 if (value) node.setAttribute(DEPTH_ATTRIBUTE, value);
                 else node.removeAttribute(DEPTH_ATTRIBUTE);
@@ -394,8 +416,19 @@ export class ListOutlineView {
         const id = button.dataset.id!;
         this.currentItemID = id;
         setOutlineCurrent(this.body, id);
-        const target = Array.from(this.active.querySelectorAll<HTMLElement>('[data-type="NodeListItem"]'))
+        const target = Array.from(this.active.querySelectorAll<HTMLElement>(OUTLINE_ITEM_SELECTOR))
             .find(node => node.dataset.nodeId === id);
+        if (target?.matches('[data-type="NodeTabItem"]')) {
+            const nativeTab = Array.from(this.active.querySelectorAll<HTMLElement>('.tabs-tab[data-tab-id]'))
+                .find(button => button.dataset.tabId === id);
+            if (nativeTab?.getClientRects().length) {
+                nativeTab.click();
+                nativeTab.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: "smooth" });
+                nativeTab.animate?.([{ backgroundColor: "var(--b3-theme-primary-light)" },
+                    { backgroundColor: "transparent" }], { duration: 1000 });
+                return;
+            }
+        }
         const foldedParent = target?.parentElement?.closest('[fold="1"]');
         if (target && target.getClientRects().length && !foldedParent) {
             target.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -406,6 +439,14 @@ export class ListOutlineView {
     private onContextMenu = (event: MouseEvent) => {
         const row = (event.target as Element).closest<HTMLButtonElement>("button[data-id]");
         if (!row?.dataset.id || !this.active || !this.editor) return;
+        const target = Array.from(this.active.querySelectorAll<HTMLElement>(OUTLINE_ITEM_SELECTOR))
+            .find(node => node.dataset.nodeId === row.dataset.id);
+        // 页签项暂不复用“插入同级列表项”菜单，避免生成错误的 NodeListItem。
+        if (target?.matches('[data-type="NodeTabItem"]')) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
         const rootID = this.active.dataset.nodeId;
         this.menuOpen = true;
         this.setExpanded(true);

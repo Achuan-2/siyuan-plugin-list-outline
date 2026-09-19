@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import { compile } from "sass";
 import { fileURLToPath } from "node:url";
-import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, findList, hasChildBlocks } from "../src/outline";
+import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, findList, findRootLists, hasChildBlocks } from "../src/outline";
 import { createOutlineRow } from "../src/outlineView";
 import { getDefaultSettings, normalizeSettings } from "../src/defaultSettings";
 import { ListOutlineController } from "../src/listOutline";
@@ -11,6 +11,8 @@ import { ListOutlineController } from "../src/listOutline";
 const paragraph = (text: string) => `<div data-type="NodeParagraph"><div contenteditable="true">${text}</div></div>`;
 const item = (id: string, text: string, children = "") => `<div data-type="NodeListItem" data-node-id="${id}"><div class="protyle-action">1.</div>${paragraph(text)}${children}<div class="protyle-attr">备注</div></div>`;
 const list = (id: string, children: string) => `<div data-type="NodeList" data-node-id="${id}">${children}</div>`;
+const tabItem = (id: string, title: string, children = "") => `<div class="tab-item" data-type="NodeTabItem" data-node-id="${id}"><div class="tab-item-info"><div data-type="NodeParagraph" tabs-title="true"><div class="tab-item-title" contenteditable="true">${title}</div></div></div><div class="tab-item-content">${children}</div></div>`;
+const tabs = (id: string, children: string) => `<div class="tabs" data-type="NodeTabs" data-node-id="${id}">${children}</div>`;
 const quote = (children: string) => `<div data-type="NodeBlockquote">${children}</div>`;
 const outlineCss = compile(fileURLToPath(new URL("../src/index.scss", import.meta.url))).css;
 const nested = list("root", item("one", "父项 <strong>加粗</strong>", paragraph("附加段落不应进入标题") +
@@ -68,6 +70,25 @@ test("跳过引述块中的列表及其后代，保留正常子列表", () => {
         { id: "parent", text: "父项", depth: 1 }, { id: "included", text: "正常子项", depth: 2 },
     ]);
     assert.deepEqual(extractOutline(document.querySelector('[data-node-id="quoted"]')!, 3), []);
+});
+
+test("页签块提取原始标题而非正文，并保留列表与嵌套页签层级", () => {
+    const dom = `<div class="protyle-wysiwyg">${tabs("tabs-root",
+        tabItem("tab-one", "第一页签 <strong>加粗</strong>", paragraph("不应进入标题的正文") +
+            list("tab-list", item("list-in-tab", "页签内列表"))) +
+        tabItem("tab-two", "第二页签", tabs("nested-tabs", tabItem("tab-nested", "嵌套页签", paragraph("嵌套正文"))))
+    )}</div>`;
+    const document = new JSDOM(dom).window.document;
+    const root = document.querySelector<HTMLElement>('[data-node-id="tabs-root"]')!;
+
+    assert.deepEqual(extractOutline(root, 3).map(({ id, text, depth, kind }) => ({ id, text, depth, kind })), [
+        { id: "tab-one", text: "第一页签 加粗", depth: 1, kind: "tab" },
+        { id: "list-in-tab", text: "页签内列表", depth: 2, kind: undefined },
+        { id: "tab-two", text: "第二页签", depth: 1, kind: "tab" },
+        { id: "tab-nested", text: "嵌套页签", depth: 2, kind: "tab" },
+    ]);
+    assert.equal(findList(document.querySelector('.tab-item-title')!)?.dataset.nodeId, "tabs-root");
+    assert.deepEqual(findRootLists(document.querySelector('.protyle-wysiwyg')!).map(node => node.dataset.nodeId), ["tabs-root"]);
 });
 
 test("引述中的文字不会作为列表项标题，独立引述列表不触发大纲", () => {
@@ -166,6 +187,34 @@ test("悬浮显示、独立层级保存及清除，卸载移除面板与监听",
         env.controller.destroy();
         env.hover("one");
         assert.equal(env.win.document.querySelector(".list-outline-floating"), null);
+    } finally { env.cleanup(); }
+});
+
+test("悬浮大纲识别页签块标题，点击条目切换原生页签", async () => {
+    const env = setup();
+    try {
+        const editor = env.win.document.querySelector<HTMLElement>(".protyle-wysiwyg")!;
+        editor.insertAdjacentHTML("beforeend", `<div class="tabs" data-type="NodeTabs" data-node-id="tabs-live">
+            <div class="tabs-header"><button class="tabs-tab" data-tab-id="tab-one"></button><button class="tabs-tab" data-tab-id="tab-two"></button></div>
+            ${tabItem("tab-one", "实验数据", paragraph("正文不显示"))}${tabItem("tab-two", "分析结果", paragraph("正文也不显示"))}
+        </div>`);
+        env.controller.sync();
+        await settle();
+
+        const panel = env.win.document.querySelector<HTMLElement>('.list-outline-floating[data-list-id="tabs-live"]')!;
+        assert.ok(panel);
+        assert.equal(panel.getAttribute("aria-label"), "页签大纲");
+        assert.deepEqual(Array.from(panel.querySelectorAll("button[data-id]"), row => row.textContent), ["实验数据", "分析结果"]);
+
+        let nativeClicks = 0;
+        editor.querySelector<HTMLElement>('.tabs-tab[data-tab-id="tab-two"]')!.addEventListener("click", () => nativeClicks++);
+        panel.querySelector<HTMLButtonElement>('button[data-id="tab-two"]')!.click();
+        assert.equal(nativeClicks, 1);
+
+        const menuEvent = new env.win.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+        panel.querySelector<HTMLButtonElement>('button[data-id="tab-one"]')!.dispatchEvent(menuEvent);
+        assert.equal(menuEvent.defaultPrevented, true);
+        assert.equal(env.menus.length, 0);
     } finally { env.cleanup(); }
 });
 

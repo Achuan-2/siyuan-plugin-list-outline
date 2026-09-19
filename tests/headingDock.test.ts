@@ -190,7 +190,10 @@ test("标题大纲 Dock：列表下拉框选择不显示或具体显示层级", 
         '<div data-type="NodeList" data-node-id="list"><div data-type="NodeListItem" data-node-id="l1">' +
         '<div data-type="NodeParagraph"><div contenteditable="true">一级列表</div></div>' +
         '<div data-type="NodeList" data-node-id="child"><div data-type="NodeListItem" data-node-id="l2">' +
-        '<div data-type="NodeParagraph"><div contenteditable="true">二级列表</div></div></div></div></div></div>';
+        '<div data-type="NodeParagraph"><div contenteditable="true">二级列表</div></div></div></div></div></div>' +
+        '<div class="tabs" data-type="NodeTabs" data-node-id="tabs"><div class="tab-item" data-type="NodeTabItem" data-node-id="tab-one">' +
+        '<div class="tab-item-info"><div data-type="NodeParagraph" tabs-title="true"><div class="tab-item-title" contenteditable="true">实验数据</div></div></div>' +
+        '<div class="tab-item-content"><div data-type="NodeParagraph"><div contenteditable="true">正文不显示</div></div></div></div></div>';
     const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree);
     try {
         await settle();
@@ -203,6 +206,9 @@ test("标题大纲 Dock：列表下拉框选择不显示或具体显示层级", 
         await settle();
         assert.ok(env.container.querySelector('[data-id="l1"]'));
         assert.equal(env.container.querySelector('[data-id="l2"]'), null);
+        const tabRow = env.container.querySelector<HTMLButtonElement>('[data-id="tab-one"]')!;
+        assert.equal(tabRow.querySelector("use")?.getAttribute("href"), "#iconTabItem");
+        assert.equal(tabRow.querySelector(".heading-outline-dock__text")?.textContent, "实验数据");
 
         env.editors[0].content.innerHTML = snapshot;
         const listContent = env.editors[0].content.querySelector('[data-node-id="l1"] [contenteditable]')!;
@@ -215,6 +221,7 @@ test("标题大纲 Dock：列表下拉框选择不显示或具体显示层级", 
         select.dispatchEvent(new env.win.Event("change"));
         await settle();
         assert.equal(env.container.querySelector('[data-id="l1"]'), null);
+        assert.equal(env.container.querySelector('[data-id="tab-one"]'), null);
     } finally { env.cleanup(); }
 });
 

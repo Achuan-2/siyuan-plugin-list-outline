@@ -1,4 +1,5 @@
-import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, LIST_SELECTOR, type OutlineEntry } from "./outline";
+import { blockDepth, DEPTH_ATTRIBUTE, extractOutline, OUTLINE_CONTAINER_SELECTOR, OUTLINE_ITEM_SELECTOR,
+    type OutlineEntry } from "./outline";
 
 // 对应思源 kernel/model/outline.go：顶层 Path 使用 name/blocks，子级 Block 使用 content/children。
 export interface NativeHeading {
@@ -12,9 +13,9 @@ export interface NativeHeading {
     children?: NativeHeading[];
 }
 
-export interface HeadingEntry extends OutlineEntry { level: number; kind?: "heading" | "list" }
+export interface HeadingEntry extends OutlineEntry { level: number }
 
-/** 用完整文档 DOM 确定列表位置，标题文字及层级仍沿用思源原生大纲。 */
+/** 用完整文档 DOM 确定列表和页签位置，标题文字及层级仍沿用思源原生大纲。 */
 export function includeListsInHeadingTree(headings: HeadingEntry[], dom: string, defaultDepth: number): HeadingEntry[] {
     const document = new DOMParser().parseFromString(dom, "text/html");
     const headingMap = new Map(headings.map(entry => [entry.id, entry]));
@@ -22,18 +23,20 @@ export function includeListsInHeadingTree(headings: HeadingEntry[], dom: string,
     const entries: HeadingEntry[] = [];
     const seen = new Set<string>();
     let headingDepth = 0;
-    for (const node of Array.from(document.querySelectorAll<HTMLElement>('[data-type="NodeHeading"], [data-type="NodeList"], [data-type="NodeListItem"]'))) {
+    const selector = `[data-type="NodeHeading"], ${OUTLINE_CONTAINER_SELECTOR}, ${OUTLINE_ITEM_SELECTOR}`;
+    for (const node of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
         const id = node.dataset.nodeId || "";
         const heading = headingMap.get(id);
         if (heading) {
             entries.push(heading);
             seen.add(id);
             headingDepth = heading.depth;
-        } else if (node.matches(LIST_SELECTOR) && !node.parentElement?.closest(LIST_SELECTOR) &&
+        } else if (node.matches(OUTLINE_CONTAINER_SELECTOR) && !node.parentElement?.closest(OUTLINE_CONTAINER_SELECTOR) &&
             !node.closest('[data-type="NodeBlockquote"], blockquote, [data-type="NodeBlockQueryEmbed"]')) {
             const depth = blockDepth(node.getAttribute(DEPTH_ATTRIBUTE)) ?? defaultDepth;
             for (const entry of extractOutline(node, depth)) {
-                listItems.set(entry.id, { ...entry, depth: headingDepth + entry.depth, level: 0, kind: "list" });
+                listItems.set(entry.id, { ...entry, depth: headingDepth + entry.depth, level: 0,
+                    kind: entry.kind === "tab" ? "tab" : "list" });
             }
         } else if (listItems.has(id)) {
             entries.push(listItems.get(id)!);

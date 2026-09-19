@@ -52,6 +52,8 @@ test("旧设置补齐独立开关，关闭任一功能不影响另一功能", ()
 
 const listDOM = (id: string, text: string, children = "") => `<div data-type="NodeListItem" data-node-id="${id}"><div data-type="NodeParagraph"><div contenteditable="true">${text}</div></div>${children}</div>`;
 const listRoot = (items: string, attrs = "") => `<div data-type="NodeList" data-node-id="root-${items.length}" ${attrs}>${items}</div>`;
+const tabDOM = (id: string, title: string, children = "") => `<div class="tab-item" data-type="NodeTabItem" data-node-id="${id}"><div class="tab-item-info"><div data-type="NodeParagraph" tabs-title="true"><div class="tab-item-title" contenteditable="true">${title}</div></div></div><div class="tab-item-content">${children}</div></div>`;
+const tabsRoot = (id: string, items: string) => `<div class="tabs" data-type="NodeTabs" data-node-id="${id}">${items}</div>`;
 const mixedDOM = listRoot(listDOM("intro", "开头列表")) + '<div data-type="NodeHeading" data-node-id="h1"></div>' +
     listRoot(listDOM("one", "第一项", listRoot(listDOM("two", "子项"))), 'custom-list-outline-depth="1"') +
     '<div data-type="NodeHeading" data-node-id="h3"></div>' + listRoot(listDOM("three", "第二节列表", listRoot(listDOM("four", "嵌套项")))) +
@@ -78,6 +80,40 @@ test("标题大纲中的纯图片列表项保留图片及可选 title", () => {
         const entry = includeListsInHeadingTree([], imageDOM, 1)[0];
         assert.equal(entry.text, "结果图");
         assert.deepEqual(entry.images, [{ src: "assets/result.png", alt: "文件名", title: "结果图" }]);
+    } finally { env.cleanup(); }
+});
+
+test("标题大纲按文档顺序显示页签标题，不混入页签正文", () => {
+    const env = setup();
+    try {
+        const dom = '<div data-type="NodeHeading" data-node-id="h1"></div>' + tabsRoot("tabs",
+            tabDOM("tab-one", "实验数据", '<div data-type="NodeParagraph"><div contenteditable="true">正文不显示</div></div>') +
+            tabDOM("tab-two", "分析结果", listRoot(listDOM("tab-list", "页签内列表"))));
+        const entries = includeListsInHeadingTree(flattenHeadingTree(tree).slice(0, 1), dom, 2);
+        assert.deepEqual(entries.map(({ id, text, depth, kind }) => ({ id, text, depth, kind })), [
+            { id: "h1", text: "1. 一级标题", depth: 1, kind: undefined },
+            { id: "tab-one", text: "实验数据", depth: 2, kind: "tab" },
+            { id: "tab-two", text: "分析结果", depth: 2, kind: "tab" },
+            { id: "tab-list", text: "页签内列表", depth: 3, kind: "list" },
+        ]);
+    } finally { env.cleanup(); }
+});
+
+test("悬浮标题大纲使用页签图标显示页签标题，且不打开列表插入菜单", async () => {
+    const dom = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        tabsRoot("tabs", tabDOM("tab-one", "实验数据", '<div data-type="NodeParagraph"><div contenteditable="true">正文不显示</div></div>'));
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom } : url.endsWith("checkBlockFold") ? { isFolded: false } : tree);
+    try {
+        env.setSettings({ headingListDepth: 2 });
+        await settle();
+        const row = env.panel.querySelector<HTMLButtonElement>('[data-id="tab-one"]')!;
+        assert.ok(row);
+        assert.equal(row.querySelector("use")?.getAttribute("href"), "#iconTabItem");
+        assert.equal(row.querySelector(".list-outline-floating__text")?.textContent, "实验数据");
+        const event = new env.win.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+        row.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, true);
+        assert.equal(env.menus.length, 0);
     } finally { env.cleanup(); }
 });
 
