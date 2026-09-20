@@ -38,18 +38,20 @@ export function findClosestHeadingOutlineTargetId(element: Element, root: Elemen
     return "";
 }
 
-/** 只有标题可以收起它后方、层级更深的连续条目。 */
-export function getCollapsibleHeadingIds(entries: HeadingEntry[]): Set<string> {
+/** 标题、段落和列表项可以收起它们后方、层级更深的连续条目。 */
+export function getCollapsibleEntryIds(entries: HeadingEntry[]): Set<string> {
     const ids = new Set<string>();
     for (let index = 0; index < entries.length - 1; index++) {
         const entry = entries[index];
-        if (!entry.kind && entries[index + 1].depth > entry.depth) ids.add(entry.id);
+        const supportsCollapse = !entry.kind || entry.kind === "heading" ||
+            entry.kind === "paragraph" || entry.kind === "list";
+        if (supportsCollapse && entries[index + 1].depth > entry.depth) ids.add(entry.id);
     }
     return ids;
 }
 
-/** 从扁平大纲中过滤掉已折叠标题的所有后代，遇到同级或更高层级时恢复显示。 */
-export function filterCollapsedHeadingEntries(entries: HeadingEntry[], collapsedIds: ReadonlySet<string>): HeadingEntry[] {
+/** 从扁平大纲中过滤掉已折叠条目的所有后代，遇到同级或更高层级时恢复显示。 */
+export function filterCollapsedEntries(entries: HeadingEntry[], collapsedIds: ReadonlySet<string>): HeadingEntry[] {
     const visible: HeadingEntry[] = [];
     let hiddenBelowDepth: number | undefined;
     for (const entry of entries) {
@@ -58,7 +60,7 @@ export function filterCollapsedHeadingEntries(entries: HeadingEntry[], collapsed
             hiddenBelowDepth = undefined;
         }
         visible.push(entry);
-        if (!entry.kind && collapsedIds.has(entry.id)) hiddenBelowDepth = entry.depth;
+        if (collapsedIds.has(entry.id)) hiddenBelowDepth = entry.depth;
     }
     return visible;
 }

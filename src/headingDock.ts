@@ -1,5 +1,5 @@
-import { filterCollapsedHeadingEntries, findClosestHeadingOutlineTargetId, findEmbeddedOutlineTarget,
-    flattenHeadingTree, getCollapsibleHeadingIds, getHeadingOutlineTargetSelector, includeListsInHeadingTree,
+import { filterCollapsedEntries, findClosestHeadingOutlineTargetId, findEmbeddedOutlineTarget,
+    flattenHeadingTree, getCollapsibleEntryIds, getHeadingOutlineTargetSelector, includeListsInHeadingTree,
     type HeadingEntry } from "./headingTree";
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import type { HeadingEditor } from "./headingOutline";
@@ -25,7 +25,7 @@ export class HeadingOutlineDockView {
     private searchInput = document.createElement("input");
     private editor: HeadingEditor | null = null;
     private entries: HeadingEntry[] = [];
-    private collapsedHeadingIds = new Set<string>();
+    private collapsedEntryIds = new Set<string>();
     private searchQuery = "";
     private version = 0;
     private timer?: ReturnType<typeof setTimeout>;
@@ -165,7 +165,7 @@ export class HeadingOutlineDockView {
         this.observer.disconnect();
         this.editor = editor;
         this.entries = [];
-        this.collapsedHeadingIds.clear();
+        this.collapsedEntryIds.clear();
         this.body.replaceChildren();
         this.status.textContent = "";
         if (!editor) {
@@ -252,13 +252,13 @@ export class HeadingOutlineDockView {
         }
 
         const query = this.searchQuery.toLowerCase();
-        const collapsibleIds = getCollapsibleHeadingIds(this.entries);
-        for (const id of this.collapsedHeadingIds) {
-            if (!collapsibleIds.has(id)) this.collapsedHeadingIds.delete(id);
+        const collapsibleIds = getCollapsibleEntryIds(this.entries);
+        for (const id of this.collapsedEntryIds) {
+            if (!collapsibleIds.has(id)) this.collapsedEntryIds.delete(id);
         }
         const filteredEntries = query
             ? this.entries.filter(e => e.text.toLowerCase().includes(query))
-            : filterCollapsedHeadingEntries(this.entries, this.collapsedHeadingIds);
+            : filterCollapsedEntries(this.entries, this.collapsedEntryIds);
 
         if (!this.entries.length) {
             this.status.textContent = this.status.textContent || "当前文档暂无标题";
@@ -303,7 +303,7 @@ export class HeadingOutlineDockView {
             if (!entry.images?.length || entry.images.some(image => image.title)) item.title = entry.text;
             item.setAttribute("aria-label", `第 ${entry.depth} 层：${entry.text}`);
             if (!query && collapsibleIds.has(entry.id)) {
-                container.append(createOutlineFoldButton(entry, !this.collapsedHeadingIds.has(entry.id),
+                container.append(createOutlineFoldButton(entry, !this.collapsedEntryIds.has(entry.id),
                     "heading-outline-dock__fold"));
             }
             container.append(item);
@@ -321,8 +321,8 @@ export class HeadingOutlineDockView {
             event.preventDefault();
             event.stopPropagation();
             const id = toggle.dataset.outlineToggle!;
-            if (this.collapsedHeadingIds.has(id)) this.collapsedHeadingIds.delete(id);
-            else this.collapsedHeadingIds.add(id);
+            if (this.collapsedEntryIds.has(id)) this.collapsedEntryIds.delete(id);
+            else this.collapsedEntryIds.add(id);
             this.render();
             return;
         }

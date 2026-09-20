@@ -302,6 +302,36 @@ test("悬浮标题大纲用箭头折叠和展开标题后代，且不触发定�
     } finally { env.cleanup(); }
 });
 
+test("悬浮标题大纲支持分别折叠段落和列表项的子项", async () => {
+    const headings = [
+        { id: "h1", name: "章节一", subType: "h1" },
+        { id: "h2", name: "章节二", subType: "h2" },
+    ];
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        '<div data-type="NodeParagraph" data-node-id="list-parent"><div contenteditable="true">列表说明</div></div>' +
+        listRoot(listDOM("one", "第一项", listRoot(listDOM("two", "子项"))) + listDOM("three", "同级项")) +
+        '<div data-type="NodeHeading" data-node-id="h2"></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : headings);
+    try {
+        env.setSettings({ headingListDepth: 3 });
+        await settle();
+        const visibleIds = () => Array.from(env.panel.querySelectorAll<HTMLButtonElement>("button[data-id]"))
+            .map(row => row.dataset.id);
+
+        env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="one"]')!.click();
+        assert.deepEqual(visibleIds(), ["h1", "list-parent", "one", "three", "h2"]);
+
+        env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="list-parent"]')!.click();
+        assert.deepEqual(visibleIds(), ["h1", "list-parent", "h2"]);
+
+        env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="list-parent"]')!.click();
+        assert.deepEqual(visibleIds(), ["h1", "list-parent", "one", "three", "h2"]);
+
+        env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="one"]')!.click();
+        assert.deepEqual(visibleIds(), ["h1", "list-parent", "one", "two", "three", "h2"]);
+    } finally { env.cleanup(); }
+});
+
 test("读取原生 name/blocks/content/children 树，跳级标题按真实父子层级缩进", () => {
     const env = setup();
     try {

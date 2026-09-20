@@ -162,6 +162,41 @@ test("标题大纲 Dock：用箭头折叠和展开标题后代，搜索时仍可
     } finally { env.cleanup(); }
 });
 
+test("标题大纲 Dock：支持分别折叠段落和列表项的子项", async () => {
+    const headings = [
+        { id: "h1", name: "章节一", subType: "h1" },
+        { id: "h2", name: "章节二", subType: "h2" },
+    ];
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        '<div data-type="NodeParagraph" data-node-id="list-parent"><div contenteditable="true">列表说明</div></div>' +
+        '<div data-type="NodeList" data-node-id="list"><div data-type="NodeListItem" data-node-id="one">' +
+        '<div data-type="NodeParagraph"><div contenteditable="true">第一项</div></div>' +
+        '<div data-type="NodeList" data-node-id="child"><div data-type="NodeListItem" data-node-id="two">' +
+        '<div data-type="NodeParagraph"><div contenteditable="true">子项</div></div></div></div></div>' +
+        '<div data-type="NodeListItem" data-node-id="three"><div data-type="NodeParagraph">' +
+        '<div contenteditable="true">同级项</div></div></div></div>' +
+        '<div data-type="NodeHeading" data-node-id="h2"></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : headings);
+    try {
+        env.setSettings({ enableHeadingDock: true, headingListDepth: 3 });
+        await settle();
+        const visibleIds = () => Array.from(env.container.querySelectorAll<HTMLButtonElement>("button[data-id]"))
+            .map(row => row.dataset.id);
+
+        env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="one"]')!.click();
+        assert.deepEqual(visibleIds(), ["h1", "list-parent", "one", "three", "h2"]);
+
+        env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="list-parent"]')!.click();
+        assert.deepEqual(visibleIds(), ["h1", "list-parent", "h2"]);
+
+        env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="list-parent"]')!.click();
+        assert.deepEqual(visibleIds(), ["h1", "list-parent", "one", "three", "h2"]);
+
+        env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="one"]')!.click();
+        assert.deepEqual(visibleIds(), ["h1", "list-parent", "one", "two", "three", "h2"]);
+    } finally { env.cleanup(); }
+});
+
 test("标题大纲 Dock：鼠标移入不定位，点击标题或段落才定位高亮", async () => {
     const env = setup();
     try {
