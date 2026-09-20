@@ -1,5 +1,6 @@
-import { filterCollapsedHeadingEntries, findEmbeddedOutlineTarget, flattenHeadingTree, getCollapsibleHeadingIds,
-    includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
+import { filterCollapsedHeadingEntries, findClosestHeadingOutlineTargetId, findEmbeddedOutlineTarget,
+    flattenHeadingTree, getCollapsibleHeadingIds, getHeadingOutlineTargetSelector, includeListsInHeadingTree,
+    type HeadingEntry } from "./headingTree";
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import type { HeadingEditor } from "./headingOutline";
 import type { OpenInsertMenu } from "./outlineInsert";
@@ -380,9 +381,7 @@ export class HeadingOutlineDockView {
 
     private resolveCurrentID(ids: Set<string>): string {
         if (!this.editor || !ids.size) return "";
-        const selector = this.editor.preview
-            ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
-            : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], [data-type="NodeTabItem"][data-node-id]';
+        const selector = getHeadingOutlineTargetSelector(this.editor.preview);
         const nodes = Array.from(this.editor.content.querySelectorAll<HTMLElement>(selector)).filter(node => {
             const id = this.editor!.preview ? node.id : node.dataset.nodeId!;
             return ids.has(id) && node.getClientRects().length > 0;
@@ -390,10 +389,9 @@ export class HeadingOutlineDockView {
 
         const pointer = this.pointerElement;
         if (pointer?.isConnected && this.editor.content.contains(pointer)) {
-            const direct = pointer.closest<HTMLElement>(selector);
-            const directID = direct && this.editor.content.contains(direct)
-                ? (this.editor.preview ? direct.id : direct.dataset.nodeId || "") : "";
-            if (ids.has(directID)) return directID;
+            const directID = findClosestHeadingOutlineTargetId(pointer, this.editor.content, ids,
+                this.editor.preview);
+            if (directID) return directID;
 
             // 普通段落、代码块等没有大纲项时，定位到文档顺序中它上方最近的大纲项。
             let preceding = "";

@@ -1,5 +1,6 @@
-import { filterCollapsedHeadingEntries, findEmbeddedOutlineTarget, flattenHeadingTree, getCollapsibleHeadingIds,
-    includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
+import { filterCollapsedHeadingEntries, findClosestHeadingOutlineTargetId, findEmbeddedOutlineTarget,
+    flattenHeadingTree, getCollapsibleHeadingIds, getHeadingOutlineTargetSelector, includeListsInHeadingTree,
+    type HeadingEntry } from "./headingTree";
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import { createOutlineFoldButton, createOutlineRow, setOutlineCurrent } from "./outlineView";
 import type { OpenInsertMenu } from "./outlineInsert";
@@ -146,6 +147,7 @@ export class HeadingOutlineController {
         this.body.addEventListener("contextmenu", this.onContextMenu);
         document.addEventListener("pointerover", this.onEditorPointer);
         document.addEventListener("focusin", this.onEditorPointer);
+        document.addEventListener("click", this.onEditorPointer);
         document.addEventListener("keydown", this.onKeyDown);
         window.addEventListener("resize", this.schedulePosition);
         window.addEventListener("scroll", this.schedulePosition, true);
@@ -189,7 +191,14 @@ export class HeadingOutlineController {
 
     private onEditorPointer = (event: Event) => {
         if (this.menuOpen) return;
-        if (event.target instanceof HTMLElement && !this.panel.contains(event.target)) this.syncEditors(event.target);
+        if (event.target instanceof HTMLElement && !this.panel.contains(event.target)) {
+            this.syncEditors(event.target);
+            if ((event.type === "click" || event.type === "focusin") && this.editor?.content.contains(event.target)) {
+                const current = findClosestHeadingOutlineTargetId(event.target, this.editor.content,
+                    new Set(this.entries.map(entry => entry.id)), this.editor.preview);
+                if (current) setOutlineCurrent(this.body, current);
+            }
+        }
     };
 
     private onDocumentClick = (event: MouseEvent) => {
@@ -450,21 +459,16 @@ export class HeadingOutlineController {
         if (focusNode && this.editor.content.contains(focusNode instanceof Node ? focusNode : null)) {
             const focusElement = focusNode instanceof Element ? focusNode : focusNode.parentElement;
             if (focusElement) {
-                // 1. 如果光标直接在标题或列表项上
-                const block = focusElement.closest<HTMLElement>(
-                    this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
-                        : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], [data-type="NodeTabItem"][data-node-id]'
-                );
-                const blockId = block ? (this.editor.preview ? block.id : block.dataset.nodeId) : null;
-                if (blockId && ids.has(blockId)) {
+                const selector = getHeadingOutlineTargetSelector(this.editor.preview);
+                // 1. 如果光标直接在标题、列表项、页签或作为列表父级的大纲段落上
+                const blockId = findClosestHeadingOutlineTargetId(focusElement, this.editor.content, ids,
+                    this.editor.preview);
+                if (blockId) {
                     targetId = blockId;
                 } else {
                     // 2. 如果光标在普通段落或子块中，查找该块上方最近的标题
                     const cursorTop = focusElement.getBoundingClientRect().top;
-                    const headings = Array.from(this.editor.content.querySelectorAll<HTMLElement>(
-                        this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
-                            : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], [data-type="NodeTabItem"][data-node-id]'
-                    )).filter(h => {
+                    const headings = Array.from(this.editor.content.querySelectorAll<HTMLElement>(selector)).filter(h => {
                         const id = this.editor!.preview ? h.id : h.dataset.nodeId!;
                         return ids.has(id) && h.getClientRects().length > 0;
                     });
@@ -483,10 +487,8 @@ export class HeadingOutlineController {
         if (!targetId) {
             const viewport = this.editor.content.closest(".protyle-content") || this.editor.content;
             const top = viewport.getBoundingClientRect().top;
-            const headings = Array.from(this.editor.content.querySelectorAll<HTMLElement>(
-                this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]"
-                    : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], [data-type="NodeTabItem"][data-node-id]'
-            )).filter(h => {
+            const selector = getHeadingOutlineTargetSelector(this.editor.preview);
+            const headings = Array.from(this.editor.content.querySelectorAll<HTMLElement>(selector)).filter(h => {
                 const id = this.editor!.preview ? h.id : h.dataset.nodeId!;
                 return ids.has(id) && h.getClientRects().length > 0;
             });
@@ -517,7 +519,8 @@ export class HeadingOutlineController {
         if (!this.editor) return;
         const ids = new Set(this.entries.map(entry => entry.id));
         let current = "";
-        const headings = this.editor.content.querySelectorAll<HTMLElement>(this.editor.preview ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id]" : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], [data-type="NodeTabItem"][data-node-id]');
+        const headings = this.editor.content.querySelectorAll<HTMLElement>(
+            getHeadingOutlineTargetSelector(this.editor.preview));
         for (const heading of Array.from(headings)) {
             const id = this.editor.preview ? heading.id : heading.dataset.nodeId!;
             if (!ids.has(id) || !heading.getClientRects().length) continue;
@@ -537,6 +540,7 @@ export class HeadingOutlineController {
         this.observer.disconnect();
         document.removeEventListener("pointerover", this.onEditorPointer);
         document.removeEventListener("focusin", this.onEditorPointer);
+        document.removeEventListener("click", this.onEditorPointer);
         document.removeEventListener("click", this.onDocumentClick);
         document.removeEventListener("keydown", this.onKeyDown);
         window.removeEventListener("resize", this.schedulePosition);

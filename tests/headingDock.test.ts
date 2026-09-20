@@ -199,6 +199,26 @@ test("标题大纲 Dock：鼠标移入不定位，点击标题或段落才定位
     } finally { env.cleanup(); }
 });
 
+test("标题大纲 Dock：聚焦列表前的父级段落时高亮该段落而非前一项", async () => {
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        '<div data-type="NodeParagraph" data-node-id="list-parent"><div contenteditable="true">列表说明</div></div>' +
+        '<div data-type="NodeList" data-node-id="list">' +
+        '<div data-type="NodeListItem" data-node-id="one"><div data-type="NodeParagraph">' +
+        '<div contenteditable="true">第一项</div></div></div></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree.slice(0, 1));
+    try {
+        env.editors[0].content.innerHTML = snapshot;
+        env.setSettings({ enableHeadingDock: true, headingListDepth: 1 });
+        await new Promise(resolve => setTimeout(resolve, 680));
+        const content = env.editors[0].content.querySelector<HTMLElement>('[data-node-id="list-parent"] [contenteditable="true"]')!;
+
+        content.dispatchEvent(new env.win.FocusEvent("focusin", { bubbles: true }));
+
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id,
+            "list-parent");
+    } finally { env.cleanup(); }
+});
+
 test("标题大纲 Dock：同步高亮不强制滚动列表到当前标题", async () => {
     const env = setup();
     try {

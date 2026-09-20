@@ -89,6 +89,29 @@ test("列表前的段落作为列表父级，并将列表层级下移一级", ()
     } finally { env.cleanup(); }
 });
 
+test("光标位于列表前的父级段落时，悬浮标题大纲定位该段落而非前一项", async () => {
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        '<div data-type="NodeParagraph" data-node-id="list-parent"><div contenteditable="true">列表说明</div></div>' +
+        listRoot(listDOM("one", "第一项"));
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree.slice(0, 1));
+    try {
+        env.editors[0].content.innerHTML = snapshot;
+        env.setSettings({ headingListDepth: 1 });
+        await new Promise(resolve => setTimeout(resolve, 680));
+        const content = env.editors[0].content.querySelector<HTMLElement>('[data-node-id="list-parent"] [contenteditable="true"]')!;
+        const selection = env.win.document.getSelection()!;
+        const range = env.win.document.createRange();
+        range.selectNodeContents(content);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        content.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
+        assert.equal(env.panel.querySelector(".list-outline-floating__current")?.getAttribute("data-id"), "list-parent");
+        assert.equal(env.controller.locateCurrent(), "list-parent");
+    } finally { env.cleanup(); }
+});
+
 test("标题大纲把当前编辑器已渲染的嵌入列表合并到文档快照", () => {
     const env = setup();
     try {
@@ -156,6 +179,24 @@ test("标题大纲按文档顺序显示页签标题，不混入页签正文", ()
             { id: "tab-one", text: "实验数据", depth: 2, kind: "tab" },
             { id: "tab-two", text: "分析结果", depth: 2, kind: "tab" },
             { id: "tab-list", text: "页签内列表", depth: 3, kind: "list" },
+        ]);
+    } finally { env.cleanup(); }
+});
+
+test("页签正文中紧邻列表的段落作为列表父级，并将列表后代下移一级", () => {
+    const env = setup();
+    try {
+        const parent = '<div data-type="NodeParagraph" data-node-id="tab-list-parent">' +
+            '<div contenteditable="true"><strong>整体计划与行动</strong></div></div>';
+        const dom = tabsRoot("tabs", tabDOM("tab-one", "20260920 Sun",
+            parent + listRoot(listDOM("plan", "计划", listRoot(listDOM("detail", "具体行动"))))));
+        const entries = includeListsInHeadingTree([], dom, 3);
+
+        assert.deepEqual(entries.map(({ id, text, depth, kind }) => ({ id, text, depth, kind })), [
+            { id: "tab-one", text: "20260920 Sun", depth: 1, kind: "tab" },
+            { id: "tab-list-parent", text: "整体计划与行动", depth: 2, kind: "paragraph" },
+            { id: "plan", text: "计划", depth: 3, kind: "list" },
+            { id: "detail", text: "具体行动", depth: 4, kind: "list" },
         ]);
     } finally { env.cleanup(); }
 });

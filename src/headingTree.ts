@@ -19,6 +19,25 @@ export interface HeadingEntry extends OutlineEntry {
     embedId?: string;
 }
 
+export function getHeadingOutlineTargetSelector(preview: boolean): string {
+    return preview
+        ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id],p[id]"
+        : '[data-type="NodeHeading"][data-node-id], [data-type="NodeListItem"][data-node-id], ' +
+            '[data-type="NodeTabItem"][data-node-id], [data-type="NodeParagraph"][data-node-id]';
+}
+
+export function findClosestHeadingOutlineTargetId(element: Element, root: Element, ids: ReadonlySet<string>,
+    preview: boolean): string {
+    const selector = getHeadingOutlineTargetSelector(preview);
+    let target = element.closest<HTMLElement>(selector);
+    while (target && root.contains(target)) {
+        const id = preview ? target.id : target.dataset.nodeId || "";
+        if (ids.has(id)) return id;
+        target = target.parentElement?.closest<HTMLElement>(selector) || null;
+    }
+    return "";
+}
+
 /** 只有标题可以收起它后方、层级更深的连续条目。 */
 export function getCollapsibleHeadingIds(entries: HeadingEntry[]): Set<string> {
     const ids = new Set<string>();
@@ -96,7 +115,7 @@ export function includeListsInHeadingTree(headings: HeadingEntry[], dom: string,
     const seen = new Set<string>();
     const rootContainers = new Set(findRootLists(document.body));
     let headingDepth = 0;
-    const selector = `[data-type="NodeHeading"], ${OUTLINE_CONTAINER_SELECTOR}, ${OUTLINE_ITEM_SELECTOR}`;
+    const selector = `[data-type="NodeHeading"], ${PARAGRAPH_SELECTOR}, ${OUTLINE_CONTAINER_SELECTOR}, ${OUTLINE_ITEM_SELECTOR}`;
     for (const node of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
         const id = node.dataset.nodeId || "";
         const heading = headingMap.get(id);
@@ -118,6 +137,23 @@ export function includeListsInHeadingTree(headings: HeadingEntry[], dom: string,
             for (const entry of extractOutline(node, depth)) {
                 listItems.set(entry.id, { ...entry, depth: headingDepth + entry.depth + (paragraph ? 1 : 0), level: 0,
                     kind: entry.kind === "tab" ? "tab" : "list", ...(embedId ? { embedId } : {}) });
+            }
+        } else if (node.matches(PARAGRAPH_SELECTOR)) {
+            const list = node.nextElementSibling?.matches('[data-type="NodeList"][data-node-id]')
+                ? node.nextElementSibling as HTMLElement : null;
+            const owner = list?.parentElement?.closest<HTMLElement>(OUTLINE_ITEM_SELECTOR);
+            // 根列表的前置段落已在上方处理；这里仅补齐页签正文中嵌套列表的父段落。
+            if (!list || rootContainers.has(list) || !owner?.matches('[data-type="NodeTabItem"]')) continue;
+            const firstItem = Array.from(list.children)
+                .find(child => child.matches('[data-type="NodeListItem"][data-node-id]')) as HTMLElement | undefined;
+            const firstEntry = firstItem ? listItems.get(firstItem.dataset.nodeId || "") : undefined;
+            if (!firstEntry) continue;
+            const embedId = list.closest<HTMLElement>(EMBED_SELECTOR)?.dataset.nodeId;
+            entries.push({ id, text: extractParagraphText(node), depth: firstEntry.depth, level: 0,
+                kind: "paragraph", ...(embedId ? { embedId } : {}) });
+            for (const item of Array.from(list.querySelectorAll<HTMLElement>(OUTLINE_ITEM_SELECTOR))) {
+                const entry = listItems.get(item.dataset.nodeId || "");
+                if (entry) entry.depth++;
             }
         } else if (listItems.has(id)) {
             entries.push(listItems.get(id)!);
