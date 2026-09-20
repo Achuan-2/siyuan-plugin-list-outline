@@ -99,7 +99,7 @@ export class HeadingOutlineController {
         for (let depth = 0; depth <= MAX_DEPTH; depth++) {
             const option = document.createElement("option");
             option.value = String(depth);
-            option.textContent = depth === 0 ? "不显示列表/页签" : `列表/页签 ${depth} 层`;
+            option.textContent = depth === 0 ? "不显示列表" : `列表 ${depth} 层`;
             this.listDepthSelect.add(option);
         }
         this.listDepthSelect.value = String(this.settings.headingListDepth);
