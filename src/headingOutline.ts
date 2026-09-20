@@ -269,7 +269,7 @@ export class HeadingOutlineController {
             icon.setAttribute("aria-hidden", "true");
             const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
             use.setAttribute("href", entry.kind === "tab" ? "#iconTabItem" :
-                entry.kind === "list" ? "#iconList" : `#iconH${entry.level}`);
+                entry.kind === "list" ? "#iconListItem" : `#iconH${entry.level}`);
             icon.append(use);
             row.insertBefore(icon, row.lastChild);
             fragment.append(row);

@@ -281,7 +281,7 @@ export class HeadingOutlineDockView {
             icon.setAttribute("aria-hidden", "true");
             const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
             use.setAttribute("href", entry.kind === "tab" ? "#iconTabItem" :
-                entry.kind === "list" ? "#iconList" : `#iconH${entry.level}`);
+                entry.kind === "list" ? "#iconListItem" : `#iconH${entry.level}`);
             icon.append(use);
 
             const text = createOutlineLabel(entry, this.searchQuery,
