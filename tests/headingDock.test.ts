@@ -56,7 +56,7 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     };
 }
 
-test("标题大纲 Dock：关闭设置时不再显示禁用提示", async () => {
+test("大纲增强 Dock：关闭设置时不再显示禁用提示", async () => {
     const env = setup();
     try {
         await settle();
@@ -74,7 +74,7 @@ test("标题大纲 Dock：关闭设置时不再显示禁用提示", async () => 
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：搜索过滤、高亮匹配项及 Esc 清空", async () => {
+test("大纲增强 Dock：搜索过滤、高亮匹配项及 Esc 清空", async () => {
     const env = setup();
     try {
         await settle();
@@ -111,7 +111,7 @@ test("标题大纲 Dock：搜索过滤、高亮匹配项及 Esc 清空", async (
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：点击定位与右键菜单插入同级", async () => {
+test("大纲增强 Dock：点击定位与右键菜单插入同级", async () => {
     const env = setup();
     try {
         await settle();
@@ -130,7 +130,7 @@ test("标题大纲 Dock：点击定位与右键菜单插入同级", async () => 
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：用箭头折叠和展开标题后代，搜索时仍可找到隐藏标题", async () => {
+test("大纲增强 Dock：用箭头折叠和展开标题后代，搜索时仍可找到隐藏标题", async () => {
     const env = setup();
     try {
         await settle();
@@ -162,7 +162,7 @@ test("标题大纲 Dock：用箭头折叠和展开标题后代，搜索时仍可
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：支持分别折叠段落和列表项的子项", async () => {
+test("大纲增强 Dock：支持分别折叠段落和列表项的子项", async () => {
     const headings = [
         { id: "h1", name: "章节一", subType: "h1" },
         { id: "h2", name: "章节二", subType: "h2" },
@@ -197,7 +197,7 @@ test("标题大纲 Dock：支持分别折叠段落和列表项的子项", async 
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：鼠标移入不定位，点击标题或段落才定位高亮", async () => {
+test("大纲增强 Dock：鼠标移入不定位，点击标题或段落才定位高亮", async () => {
     const env = setup();
     try {
         await settle();
@@ -234,7 +234,7 @@ test("标题大纲 Dock：鼠标移入不定位，点击标题或段落才定位
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：聚焦列表前的父级段落时高亮该段落而非前一项", async () => {
+test("大纲增强 Dock：聚焦列表前的父级段落时高亮该段落而非前一项", async () => {
     const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
         '<div data-type="NodeParagraph" data-node-id="list-parent"><div contenteditable="true">列表说明</div></div>' +
         '<div data-type="NodeList" data-node-id="list">' +
@@ -254,7 +254,7 @@ test("标题大纲 Dock：聚焦列表前的父级段落时高亮该段落而非
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：同步高亮不强制滚动列表到当前标题", async () => {
+test("大纲增强 Dock：同步高亮不强制滚动列表到当前标题", async () => {
     const env = setup();
     try {
         await settle();
@@ -272,7 +272,7 @@ test("标题大纲 Dock：同步高亮不强制滚动列表到当前标题", asy
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：列表下拉框选择不显示或具体显示层级", async () => {
+test("大纲增强 Dock：列表下拉框选择不显示或具体显示层级", async () => {
     const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
         '<div data-type="NodeList" data-node-id="list"><div data-type="NodeListItem" data-node-id="l1">' +
         '<div data-type="NodeParagraph"><div contenteditable="true">一级列表</div></div>' +
@@ -284,7 +284,7 @@ test("标题大纲 Dock：列表下拉框选择不显示或具体显示层级", 
     const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree);
     try {
         await settle();
-        const select = env.container.querySelector<HTMLSelectElement>('select[aria-label="标题大纲列表层级"]')!;
+        const select = env.container.querySelector<HTMLSelectElement>('select[aria-label="大纲增强列表层级"]')!;
         assert.equal(select.value, "0");
         assert.equal(env.calls.some(call => call.url.endsWith("getBlockDOM")), false);
 
@@ -312,7 +312,7 @@ test("标题大纲 Dock：列表下拉框选择不显示或具体显示层级", 
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：纯图片列表项显示图片，alt 不作为可见文本", async () => {
+test("大纲增强 Dock：纯图片列表项显示图片，alt 不作为可见文本", async () => {
     const snapshot = '<div data-type="NodeList" data-node-id="list"><div data-type="NodeListItem" data-node-id="image-only">' +
         '<div data-type="NodeParagraph"><div contenteditable="true"><span data-type="img" class="img">' +
         '<img src="assets/result.png" alt="不显示的文件名"></span></div></div></div></div>';
@@ -328,7 +328,7 @@ test("标题大纲 Dock：纯图片列表项显示图片，alt 不作为可见�
     } finally { env.cleanup(); }
 });
 
-test("标题大纲 Dock：显示并定位嵌入块里的列表项", async () => {
+test("大纲增强 Dock：显示并定位嵌入块里的列表项", async () => {
     const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
         '<div data-type="NodeBlockQueryEmbed" data-node-id="embed-one"></div>';
     const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree);

@@ -97,7 +97,7 @@
     &__empty, &__status { display: none; }
     &__status { flex: none; border-top: 1px solid var(--b3-border-color); }
     &--expanded {
-        // 展开的列表大纲优先于标题大纲，收起时恢复原层级。
+        // 展开的列表大纲优先于大纲增强，收起时恢复原层级。
         &:not(.heading-outline-floating) { z-index: 10; }
         background: var(--b3-theme-background);
         border-color: var(--b3-border-color);

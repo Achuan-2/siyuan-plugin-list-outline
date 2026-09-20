@@ -89,7 +89,7 @@ test("列表前的段落作为列表父级，并将列表层级下移一级", ()
     } finally { env.cleanup(); }
 });
 
-test("光标位于列表前的父级段落时，悬浮标题大纲定位该段落而非前一项", async () => {
+test("光标位于列表前的父级段落时，悬浮大纲增强定位该段落而非前一项", async () => {
     const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
         '<div data-type="NodeParagraph" data-node-id="list-parent"><div contenteditable="true">列表说明</div></div>' +
         listRoot(listDOM("one", "第一项"));
@@ -112,7 +112,7 @@ test("光标位于列表前的父级段落时，悬浮标题大纲定位该段�
     } finally { env.cleanup(); }
 });
 
-test("标题大纲把当前编辑器已渲染的嵌入列表合并到文档快照", () => {
+test("大纲增强把当前编辑器已渲染的嵌入列表合并到文档快照", () => {
     const env = setup();
     try {
         const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' + embedBlock("embed-one") +
@@ -130,7 +130,7 @@ test("标题大纲把当前编辑器已渲染的嵌入列表合并到文档快�
     } finally { env.cleanup(); }
 });
 
-test("悬浮标题大纲点击嵌入列表项定位当前渲染副本，且不提供插入菜单", async () => {
+test("悬浮大纲增强点击嵌入列表项定位当前渲染副本，且不提供插入菜单", async () => {
     const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' + embedBlock("embed-one");
     const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree);
     try {
@@ -157,7 +157,7 @@ test("悬浮标题大纲点击嵌入列表项定位当前渲染副本，且不�
     } finally { env.cleanup(); }
 });
 
-test("标题大纲中的纯图片列表项保留图片及可选 title", () => {
+test("大纲增强中的纯图片列表项保留图片及可选 title", () => {
     const env = setup();
     try {
         const imageDOM = listRoot(listDOM("image-only", '<span data-type="img" class="img"><img src="assets/result.png" alt="文件名"><span class="protyle-action__title"><span>结果图</span></span></span>'));
@@ -167,7 +167,7 @@ test("标题大纲中的纯图片列表项保留图片及可选 title", () => {
     } finally { env.cleanup(); }
 });
 
-test("标题大纲按文档顺序显示页签标题，不混入页签正文", () => {
+test("大纲增强按文档顺序显示页签标题，不混入页签正文", () => {
     const env = setup();
     try {
         const dom = '<div data-type="NodeHeading" data-node-id="h1"></div>' + tabsRoot("tabs",
@@ -201,7 +201,7 @@ test("页签正文中紧邻列表的段落作为列表父级，并将列表后�
     } finally { env.cleanup(); }
 });
 
-test("悬浮标题大纲使用页签图标显示页签标题，且不打开列表插入菜单", async () => {
+test("悬浮大纲增强使用页签图标显示页签标题，且不打开列表插入菜单", async () => {
     const dom = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
         tabsRoot("tabs", tabDOM("tab-one", "实验数据", '<div data-type="NodeParagraph"><div contenteditable="true">正文不显示</div></div>'));
     const env = setup(async url => url.endsWith("getBlockDOM") ? { dom } : url.endsWith("checkBlockFold") ? { isFolded: false } : tree);
@@ -224,7 +224,7 @@ test("列表层级下拉框即时生效，不显示时不读全文，混合列�
     try {
         await settle();
         assert.equal(env.calls.some(call => call.url.endsWith("getBlockDOM")), false);
-        const select = env.panel.querySelector<HTMLSelectElement>('select[aria-label="标题大纲列表层级"]')!;
+        const select = env.panel.querySelector<HTMLSelectElement>('select[aria-label="大纲增强列表层级"]')!;
         assert.equal(select.value, "0");
         select.value = "2";
         select.dispatchEvent(new env.win.Event("change"));
@@ -265,7 +265,7 @@ test("关闭混合目录后，未完成的全文请求不能重新显示列表",
     } finally { env.cleanup(); }
 });
 
-test("标题大纲右键传递对应标题与文档上下文", async () => {
+test("大纲增强右键传递对应标题与文档上下文", async () => {
     const env = setup();
     try {
         await settle();
@@ -278,7 +278,7 @@ test("标题大纲右键传递对应标题与文档上下文", async () => {
     } finally { env.cleanup(); }
 });
 
-test("悬浮标题大纲用箭头折叠和展开标题后代，且不触发定位", async () => {
+test("悬浮大纲增强用箭头折叠和展开标题后代，且不触发定位", async () => {
     const env = setup();
     try {
         await settle();
@@ -302,7 +302,7 @@ test("悬浮标题大纲用箭头折叠和展开标题后代，且不触发定�
     } finally { env.cleanup(); }
 });
 
-test("悬浮标题大纲支持分别折叠段落和列表项的子项", async () => {
+test("悬浮大纲增强支持分别折叠段落和列表项的子项", async () => {
     const headings = [
         { id: "h1", name: "章节一", subType: "h1" },
         { id: "h2", name: "章节二", subType: "h2" },
@@ -366,7 +366,7 @@ test("使用文档 ID 请求完整大纲，悬停展开，折叠标题使用原�
         assert.equal(env.panel.style.left, "698px");
         assert.equal(env.panel.classList.contains("heading-outline-floating--icon"), false);
         const locate = env.panel.querySelector<HTMLButtonElement>('button[aria-label="定位当前位置"]')!;
-        const refresh = env.panel.querySelector<HTMLButtonElement>('button[aria-label="刷新标题大纲"]')!;
+        const refresh = env.panel.querySelector<HTMLButtonElement>('button[aria-label="刷新大纲增强"]')!;
         assert.equal(locate.textContent, "");
         assert.equal(locate.querySelector("use")?.getAttribute("href"), "#iconFocus");
         assert.equal(refresh.textContent, "");
@@ -389,7 +389,7 @@ test("使用文档 ID 请求完整大纲，悬停展开，折叠标题使用原�
     } finally { env.cleanup(); }
 });
 
-test("电脑端悬浮标题大纲支持在线切换省略列表型与图标型", async () => {
+test("电脑端悬浮大纲增强支持在线切换省略列表型与图标型", async () => {
     const env = setup();
     try {
         await settle();
@@ -411,13 +411,13 @@ test("电脑端悬浮标题大纲支持在线切换省略列表型与图标型",
     } finally { env.cleanup(); }
 });
 
-test("移动端悬浮标题大纲显示为按钮，点击后展开并可再次收起", async () => {
+test("移动端悬浮大纲增强显示为按钮，点击后展开并可再次收起", async () => {
     const env = setup(undefined, true);
     try {
         await settle();
         const toggle = env.panel.querySelector<HTMLButtonElement>(".heading-outline-floating__toggle")!;
         assert.ok(toggle);
-        assert.equal(toggle.getAttribute("aria-label"), "打开标题大纲");
+        assert.equal(toggle.getAttribute("aria-label"), "打开大纲增强");
         assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), false);
         assert.equal(env.panel.style.width, "52px");
         assert.equal(env.panel.style.top, "52px");
@@ -439,7 +439,7 @@ test("移动端悬浮标题大纲显示为按钮，点击后展开并可再次�
 
         toggle.click();
         assert.equal(toggle.getAttribute("aria-expanded"), "true");
-        assert.equal(toggle.getAttribute("aria-label"), "关闭标题大纲");
+        assert.equal(toggle.getAttribute("aria-label"), "关闭大纲增强");
         assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), true);
         assert.equal(env.panel.style.width, "320px");
         assert.equal(toggle.hidden, true);
@@ -501,7 +501,7 @@ test("预览模式直接定位预览标题，关闭编辑器后隐藏目录", as
     } finally { env.cleanup(); }
 });
 
-test("标题大纲右键打开菜单时离开大纲不收起，菜单关闭后恢复收起", async () => {
+test("大纲增强右键打开菜单时离开大纲不收起，菜单关闭后恢复收起", async () => {
     const env = setup();
     try {
         let closeMenu: () => void = () => {};

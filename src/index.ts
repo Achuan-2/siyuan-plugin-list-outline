@@ -31,7 +31,7 @@ export default class ListOutlinePlugin extends Plugin {
                 position: "RightTop",
                 size: { width: 260, height: 0 },
                 icon: HEADING_OUTLINE_ICON_ID,
-                title: "标题大纲",
+                title: "大纲增强",
             },
             data: { plugin: this },
             type: dockId,

@@ -55,13 +55,13 @@ export class HeadingOutlineController {
         this.panel.className = "list-outline-floating heading-outline-floating";
         this.panel.classList.toggle("heading-outline-floating--mobile", this.mobile);
         this.syncDisplayMode();
-        this.panel.setAttribute("aria-label", "悬浮标题大纲");
+        this.panel.setAttribute("aria-label", "悬浮大纲增强");
         const toggle = document.createElement("button");
         toggle.type = "button";
         toggle.className = "heading-outline-floating__toggle";
         toggle.setAttribute("aria-expanded", "false");
-        toggle.setAttribute("aria-label", "打开标题大纲");
-        toggle.title = "打开标题大纲";
+        toggle.setAttribute("aria-label", "打开大纲增强");
+        toggle.title = "打开大纲增强";
         const toggleIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         toggleIcon.classList.add("heading-outline-floating__toggle-icon");
         toggleIcon.setAttribute("aria-hidden", "true");
@@ -76,7 +76,7 @@ export class HeadingOutlineController {
         const header = document.createElement("div");
         header.className = "list-outline-floating__header";
         const title = document.createElement("span");
-        title.textContent = "标题大纲";
+        title.textContent = "大纲增强";
         const createActionButton = (iconId: string, label: string) => {
             const button = document.createElement("button");
             button.type = "button";
@@ -94,11 +94,11 @@ export class HeadingOutlineController {
         };
         const locate = createActionButton("iconFocus", "定位当前位置");
         locate.addEventListener("click", () => this.locateCurrent());
-        const refresh = createActionButton("iconRefresh", "刷新标题大纲");
+        const refresh = createActionButton("iconRefresh", "刷新大纲增强");
         refresh.addEventListener("click", () => void this.refresh());
         this.listDepthSelect.className = "b3-select";
-        this.listDepthSelect.setAttribute("aria-label", "标题大纲列表层级");
-        this.listDepthSelect.title = "选择标题大纲中显示的列表层级";
+        this.listDepthSelect.setAttribute("aria-label", "大纲增强列表层级");
+        this.listDepthSelect.title = "选择大纲增强中显示的列表层级";
         for (let depth = 0; depth <= MAX_DEPTH; depth++) {
             const option = document.createElement("option");
             option.value = String(depth);
@@ -242,8 +242,8 @@ export class HeadingOutlineController {
             this.render();
         } catch (error) {
             if (this.disposed || version !== this.version) return;
-            console.error("悬浮标题大纲：读取失败", error);
-            this.status.textContent = "读取标题大纲失败，可点击刷新重试";
+            console.error("悬浮大纲增强：读取失败", error);
+            this.status.textContent = "读取大纲增强失败，可点击刷新重试";
             this.render();
         }
     }
@@ -301,7 +301,7 @@ export class HeadingOutlineController {
             fragment.append(container);
         }
         if (!this.entries.length && this.status.textContent) {
-            const retry = createOutlineRow({ id: "", depth: 1, text: "重新读取标题大纲" });
+            const retry = createOutlineRow({ id: "", depth: 1, text: "重新读取大纲增强" });
             fragment.append(retry);
         }
         const scrollTop = this.body.scrollTop;
@@ -353,7 +353,7 @@ export class HeadingOutlineController {
                 if (this.mobile || this.iconMode) this.setExpanded(false);
             }
         } catch (error) {
-            console.error("悬浮标题大纲：定位失败", error);
+            console.error("悬浮大纲增强：定位失败", error);
             if (!this.disposed) this.options.reportError("大纲条目定位失败，请重试。");
         }
     };
@@ -389,8 +389,8 @@ export class HeadingOutlineController {
         const toggle = this.panel.querySelector<HTMLButtonElement>(".heading-outline-floating__toggle");
         if (toggle) {
             toggle.setAttribute("aria-expanded", String(expanded));
-            toggle.setAttribute("aria-label", expanded ? "关闭标题大纲" : "打开标题大纲");
-            toggle.title = expanded ? "关闭标题大纲" : "打开标题大纲";
+            toggle.setAttribute("aria-label", expanded ? "关闭大纲增强" : "打开大纲增强");
+            toggle.title = expanded ? "关闭大纲增强" : "打开大纲增强";
             toggle.hidden = (this.mobile || this.iconMode) && expanded;
         }
         if (!expanded) this.body.scrollTop = 0;

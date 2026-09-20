@@ -17,7 +17,7 @@
   },
   "description": {
     "default": "Independent floating heading and list outlines, with single-line labels and per-list depth.",
-    "zh-CN": "可独立开关的悬浮标题大纲与列表大纲，文字单行省略，支持列表块独立层级设置。"
+    "zh-CN": "可独立开关的悬浮大纲增强与列表大纲，文字单行省略，支持列表块独立层级设置。"
   },
   "readme": {
     "default": "README_en.md",

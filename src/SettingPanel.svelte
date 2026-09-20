@@ -9,12 +9,12 @@
     let saving = false;
     $: items = [
         { key: 'enableHeadingOutline', type: 'checkbox', value: settings.enableHeadingOutline,
-          title: '悬浮标题大纲', description: '在当前文档右侧显示悬浮标题目录，悬停线条展开内容，点击定位标题。' },
+          title: '悬浮大纲增强', description: '在当前文档右侧显示悬浮标题目录，悬停线条展开内容，点击定位标题。' },
         { key: 'enableHeadingDock', type: 'checkbox', value: settings.enableHeadingDock,
-          title: '右侧标题大纲 Dock', description: '在右侧栏注册一个独立的标题大纲 Dock 面板，持久常驻显示当前文档大纲。' },
+          title: '右侧大纲增强 Dock', description: '在右侧栏注册一个独立的大纲增强 Dock 面板，持久常驻显示当前文档大纲。' },
         { key: 'headingOutlineDisplayMode', type: 'select', value: settings.headingOutlineDisplayMode,
           options: { compact: '省略列表型', icon: '图标型' },
-          title: '电脑端悬浮标题大纲样式', description: '选择省略列表型，或使用和移动端相同的单按钮样式；按钮可悬浮或点击展开标题大纲。' },
+          title: '电脑端悬浮大纲增强样式', description: '选择省略列表型，或使用和移动端相同的单按钮样式；按钮可悬浮或点击展开大纲增强。' },
         { key: 'enableListOutline', type: 'checkbox', value: settings.enableListOutline,
           title: '悬浮列表/页签大纲', description: '正文或嵌入块中的列表、页签处于可视区域内时，在右侧显示列表项或页签标题；不提取引述块中的内容。' },
         { key: 'listOutlineRequireChildren', type: 'checkbox', value: settings.listOutlineRequireChildren,
@@ -22,7 +22,7 @@
         { key: 'headingListDepth', type: 'select', value: String(settings.headingListDepth),
           options: Object.fromEntries(Array.from({ length: MAX_DEPTH + 1 }, (_, depth) =>
             [String(depth), depth === 0 ? '不显示列表/页签' : `显示 ${depth} 层列表/页签`])),
-          title: '标题大纲列表/页签层级', description: '选择不显示列表/页签，或在所属标题下显示指定层级的正文及嵌入块列表项、页签标题；块的独立层级设置仍优先生效。' },
+          title: '大纲增强列表/页签层级', description: '选择不显示列表/页签，或在所属标题下显示指定层级的正文及嵌入块列表项、页签标题；块的独立层级设置仍优先生效。' },
         { key: 'defaultDepth', type: 'number', value: settings.defaultDepth,
           title: '列表/页签默认大纲层级', description: `显示前多少层列表项或页签标题，范围 1–${MAX_DEPTH}；单独设置过的块不受影响。` },
     ] as ISettingItem[];

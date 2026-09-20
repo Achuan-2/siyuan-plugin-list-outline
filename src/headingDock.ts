@@ -40,20 +40,20 @@ export class HeadingOutlineDockView {
         private options: HeadingDockOptions,
     ) {
         this.rootElement.className = "heading-outline-dock fn__flex-1 fn__flex-column";
-        this.rootElement.setAttribute("aria-label", "标题大纲 Dock");
+        this.rootElement.setAttribute("aria-label", "大纲增强 Dock");
 
         // 顶部工具栏
         this.header.className = "heading-outline-dock__header block__icons";
         const logo = document.createElement("span");
         logo.className = "block__logo";
-        logo.textContent = "标题大纲";
+        logo.textContent = "大纲增强";
 
         const space = document.createElement("span");
         space.className = "fn__flex-1";
 
         this.listDepthSelect.className = "b3-select heading-outline-dock__list-depth";
-        this.listDepthSelect.setAttribute("aria-label", "标题大纲列表层级");
-        this.listDepthSelect.title = "选择标题大纲中显示的列表层级";
+        this.listDepthSelect.setAttribute("aria-label", "大纲增强列表层级");
+        this.listDepthSelect.title = "选择大纲增强中显示的列表层级";
         for (let depth = 0; depth <= MAX_DEPTH; depth++) {
             const option = document.createElement("option");
             option.value = String(depth);
@@ -226,8 +226,8 @@ export class HeadingOutlineDockView {
             this.render();
         } catch (error) {
             if (this.disposed || version !== this.version) return;
-            console.error("标题大纲 Dock：读取失败", error);
-            this.status.textContent = "读取标题大纲失败，可点击刷新重试";
+            console.error("大纲增强 Dock：读取失败", error);
+            this.status.textContent = "读取大纲增强失败，可点击刷新重试";
             this.render();
         }
     }
@@ -350,7 +350,7 @@ export class HeadingOutlineDockView {
             });
             if (!this.disposed && this.editor === editor) this.options.navigate(id, !!result?.isFolded);
         } catch (error) {
-            console.error("标题大纲 Dock：定位失败", error);
+            console.error("大纲增强 Dock：定位失败", error);
             if (!this.disposed) this.options.reportError("大纲条目定位失败，请重试。");
         }
     };
