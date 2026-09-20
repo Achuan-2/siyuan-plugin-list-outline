@@ -231,7 +231,7 @@ export class HeadingOutlineDockView {
     refreshSettings() {
         this.listDepthSelect.value = String(this.settings.headingListDepth);
         if (this.settings.headingListDepth === 0) {
-            this.entries = this.entries.filter(entry => !["list", "tab"].includes(entry.kind || ""));
+            this.entries = this.entries.filter(entry => !["paragraph", "list", "tab"].includes(entry.kind || ""));
             this.render();
         }
         void this.refresh();
@@ -281,6 +281,7 @@ export class HeadingOutlineDockView {
             icon.setAttribute("aria-hidden", "true");
             const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
             use.setAttribute("href", entry.kind === "tab" ? "#iconTabItem" :
+                entry.kind === "paragraph" ? "#iconParagraph" :
                 entry.kind === "list" ? "#iconListItem" : `#iconH${entry.level}`);
             icon.append(use);
 
@@ -333,7 +334,7 @@ export class HeadingOutlineDockView {
         if (!row?.dataset.id || !this.editor) return;
         const rootID = this.editor.rootID;
         const kind = this.entries.find(entry => entry.id === row.dataset.id && entry.embedId === row.dataset.embedId)?.kind || "heading";
-        if (kind === "tab" || row.dataset.embedId) {
+        if (kind === "tab" || kind === "paragraph" || row.dataset.embedId) {
             event.preventDefault();
             event.stopPropagation();
             return;

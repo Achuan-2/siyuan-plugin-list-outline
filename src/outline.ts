@@ -13,7 +13,7 @@ export interface OutlineEntry {
     text: string;
     depth: number;
     images?: OutlineImage[];
-    kind?: "heading" | "list" | "tab";
+    kind?: "heading" | "paragraph" | "list" | "tab";
 }
 
 export interface OutlineImage {

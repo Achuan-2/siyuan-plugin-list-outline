@@ -75,6 +75,20 @@ test("混合目录按文档顺序归入标题，沿用独立层级且排除引�
     } finally { env.cleanup(); }
 });
 
+test("列表前的段落作为列表父级，并将列表层级下移一级", () => {
+    const env = setup();
+    try {
+        const dom = '<div data-type="NodeParagraph" data-node-id="list-parent"><div contenteditable="true">列表说明</div></div>' +
+            listRoot(listDOM("one", "第一项", listRoot(listDOM("two", "子项"))), 'custom-list-outline-depth="2"');
+        const entries = includeListsInHeadingTree([], dom, 3);
+        assert.deepEqual(entries.map(({ id, text, depth, kind }) => ({ id, text, depth, kind })), [
+            { id: "list-parent", text: "列表说明", depth: 1, kind: "paragraph" },
+            { id: "one", text: "第一项", depth: 2, kind: "list" },
+            { id: "two", text: "子项", depth: 3, kind: "list" },
+        ]);
+    } finally { env.cleanup(); }
+});
+
 test("标题大纲把当前编辑器已渲染的嵌入列表合并到文档快照", () => {
     const env = setup();
     try {
@@ -176,7 +190,7 @@ test("列表层级下拉框即时生效，不显示时不读全文，混合列�
         await settle();
         const row = env.panel.querySelector<HTMLButtonElement>('[data-id="three"]')!;
         assert.ok(row);
-        assert.equal(row.querySelector("use")?.getAttribute("href"), "#iconList");
+        assert.equal(row.querySelector("use")?.getAttribute("href"), "#iconListItem");
         row.click();
         await settle();
         assert.equal(env.navigations.at(-1)?.id, "three");

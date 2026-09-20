@@ -251,7 +251,7 @@ export class HeadingOutlineController {
         this.syncDisplayMode();
         this.listDepthSelect.value = String(this.settings.headingListDepth);
         if (this.settings.headingListDepth === 0) {
-            this.entries = this.entries.filter(entry => !["list", "tab"].includes(entry.kind || ""));
+            this.entries = this.entries.filter(entry => !["paragraph", "list", "tab"].includes(entry.kind || ""));
             this.render();
         }
         // 立即使旧请求失效，避免关闭列表后被未完成的混合大纲请求覆盖。
@@ -269,6 +269,7 @@ export class HeadingOutlineController {
             icon.setAttribute("aria-hidden", "true");
             const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
             use.setAttribute("href", entry.kind === "tab" ? "#iconTabItem" :
+                entry.kind === "paragraph" ? "#iconParagraph" :
                 entry.kind === "list" ? "#iconListItem" : `#iconH${entry.level}`);
             icon.append(use);
             row.insertBefore(icon, row.lastChild);
@@ -327,7 +328,7 @@ export class HeadingOutlineController {
         if (!row?.dataset.id || !this.editor) return;
         const rootID = this.editor.rootID;
         const kind = this.entries.find(entry => entry.id === row.dataset.id && entry.embedId === row.dataset.embedId)?.kind || "heading";
-        if (kind === "tab" || row.dataset.embedId) {
+        if (kind === "tab" || kind === "paragraph" || row.dataset.embedId) {
             event.preventDefault();
             event.stopPropagation();
             return;

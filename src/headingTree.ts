@@ -20,6 +20,7 @@ export interface HeadingEntry extends OutlineEntry {
 }
 
 const EMBED_SELECTOR = '[data-type="NodeBlockQueryEmbed"][data-node-id]';
+const PARAGRAPH_SELECTOR = '[data-type="NodeParagraph"][data-node-id]';
 
 /**
  * Kernel 的 BlockDOM 只有嵌入查询语句，不包含前端异步渲染出的查询结果。
@@ -39,6 +40,17 @@ function mergeRenderedEmbeds(document: Document, liveRoot?: Element | null) {
             snapshotEmbed.append(result.cloneNode(true));
         }
     }
+}
+
+function extractParagraphText(paragraph: HTMLElement): string {
+    const content = paragraph.querySelector<HTMLElement>('[contenteditable="true"]');
+    const clone = (content || paragraph).cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('.protyle-attr, .protyle-action, .protyle-action__title, script, style, .img__net')
+        .forEach(node => node.remove());
+    clone.querySelectorAll('[data-type="inline-math"]').forEach(math =>
+        math.replaceWith(math.getAttribute("data-content") || math.textContent || ""));
+    clone.querySelectorAll('img').forEach(img => img.replaceWith(img.getAttribute('alt') || "图片"));
+    return (clone.textContent || "").replace(/[\u200b\ufeff]/g, "").replace(/\s+/g, " ").trim() || "（空段落）";
 }
 
 export function findEmbeddedOutlineTarget(root: Element, id: string, embedId: string): HTMLElement | null {
@@ -71,8 +83,15 @@ export function includeListsInHeadingTree(headings: HeadingEntry[], dom: string,
             (!node.closest('[data-type="NodeBlockQueryEmbed"]') || node.closest(EMBED_RESULT_SELECTOR))) {
             const depth = blockDepth(node.getAttribute(DEPTH_ATTRIBUTE)) ?? defaultDepth;
             const embedId = node.closest<HTMLElement>(EMBED_SELECTOR)?.dataset.nodeId;
+            const paragraph = node.previousElementSibling?.matches(PARAGRAPH_SELECTOR)
+                ? node.previousElementSibling as HTMLElement : null;
+            if (paragraph) {
+                entries.push({ id: paragraph.dataset.nodeId!, text: extractParagraphText(paragraph),
+                    depth: headingDepth + 1, level: 0, kind: "paragraph",
+                    ...(embedId ? { embedId } : {}) });
+            }
             for (const entry of extractOutline(node, depth)) {
-                listItems.set(entry.id, { ...entry, depth: headingDepth + entry.depth, level: 0,
+                listItems.set(entry.id, { ...entry, depth: headingDepth + entry.depth + (paragraph ? 1 : 0), level: 0,
                     kind: entry.kind === "tab" ? "tab" : "list", ...(embedId ? { embedId } : {}) });
             }
         } else if (listItems.has(id)) {
