@@ -161,6 +161,31 @@
 
 .heading-outline-floating {
     z-index: 8;
+    &__entry { position: relative; }
+    &.list-outline-floating--expanded .heading-outline-floating__item {
+        padding-inline-start: calc(var(--outline-indent) + 18px);
+    }
+    &__fold {
+        display: none;
+        position: absolute;
+        z-index: 1;
+        inset-inline-start: calc(var(--outline-indent) - 2px);
+        top: 4px;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        padding: 3px;
+        border: 0;
+        border-radius: 4px;
+        color: var(--b3-theme-on-surface-light);
+        background: transparent;
+        cursor: pointer;
+        svg { width: 12px; height: 12px; fill: currentColor; }
+        &:hover, &:focus-visible { color: var(--b3-theme-primary); background: var(--b3-list-hover); }
+        &:focus-visible { outline: 1px solid var(--b3-theme-primary); outline-offset: -1px; }
+    }
+    &.list-outline-floating--expanded .heading-outline-floating__fold { display: flex; }
     &__icon { display: none; width: 14px; height: 14px; fill: currentColor; flex: none; margin-right: 6px; }
     &.list-outline-floating--expanded .heading-outline-floating__icon { display: block; }
 
@@ -327,6 +352,32 @@
             color: var(--b3-theme-primary);
             font-weight: 500;
         }
+    }
+
+    &__entry {
+        position: relative;
+    }
+
+    &__fold {
+        position: absolute;
+        z-index: 1;
+        inset-inline-start: var(--outline-indent);
+        top: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        padding: 3px;
+        border: 0;
+        border-radius: 4px;
+        color: var(--b3-theme-on-surface-light);
+        background: transparent;
+        cursor: pointer;
+
+        svg { width: 12px; height: 12px; fill: currentColor; }
+        &:hover, &:focus-visible { color: var(--b3-theme-primary); background: var(--b3-list-hover); }
+        &:focus-visible { outline: 1px solid var(--b3-theme-primary); outline-offset: -1px; }
     }
 
     &__icon {

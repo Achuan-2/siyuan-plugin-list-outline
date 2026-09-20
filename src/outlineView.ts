@@ -73,6 +73,23 @@ export function createOutlineRow(entry: OutlineEntry, highlightKeyword?: string)
     return row;
 }
 
+export function createOutlineFoldButton(entry: OutlineEntry, expanded: boolean, className: string): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.dataset.outlineToggle = entry.id;
+    button.setAttribute("aria-expanded", String(expanded));
+    button.setAttribute("aria-label", `${expanded ? "折叠" : "展开"}：${entry.text}`);
+    button.title = expanded ? "折叠下级标题" : "展开下级标题";
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", expanded ? "#iconDown" : "#iconRight");
+    icon.append(use);
+    button.append(icon);
+    return button;
+}
+
 export function setOutlineCurrent(body: HTMLElement, id: string) {
     body.querySelectorAll<HTMLElement>("button[data-id]").forEach(row => {
         const active = !!id && row.dataset.id === id;

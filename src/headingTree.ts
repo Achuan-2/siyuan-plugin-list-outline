@@ -19,6 +19,31 @@ export interface HeadingEntry extends OutlineEntry {
     embedId?: string;
 }
 
+/** 只有标题可以收起它后方、层级更深的连续条目。 */
+export function getCollapsibleHeadingIds(entries: HeadingEntry[]): Set<string> {
+    const ids = new Set<string>();
+    for (let index = 0; index < entries.length - 1; index++) {
+        const entry = entries[index];
+        if (!entry.kind && entries[index + 1].depth > entry.depth) ids.add(entry.id);
+    }
+    return ids;
+}
+
+/** 从扁平大纲中过滤掉已折叠标题的所有后代，遇到同级或更高层级时恢复显示。 */
+export function filterCollapsedHeadingEntries(entries: HeadingEntry[], collapsedIds: ReadonlySet<string>): HeadingEntry[] {
+    const visible: HeadingEntry[] = [];
+    let hiddenBelowDepth: number | undefined;
+    for (const entry of entries) {
+        if (hiddenBelowDepth !== undefined) {
+            if (entry.depth > hiddenBelowDepth) continue;
+            hiddenBelowDepth = undefined;
+        }
+        visible.push(entry);
+        if (!entry.kind && collapsedIds.has(entry.id)) hiddenBelowDepth = entry.depth;
+    }
+    return visible;
+}
+
 const EMBED_SELECTOR = '[data-type="NodeBlockQueryEmbed"][data-node-id]';
 const PARAGRAPH_SELECTOR = '[data-type="NodeParagraph"][data-node-id]';
 

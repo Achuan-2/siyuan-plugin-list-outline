@@ -1,6 +1,7 @@
-import { findEmbeddedOutlineTarget, flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
+import { filterCollapsedHeadingEntries, findEmbeddedOutlineTarget, flattenHeadingTree, getCollapsibleHeadingIds,
+    includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
-import { createOutlineRow, setOutlineCurrent } from "./outlineView";
+import { createOutlineFoldButton, createOutlineRow, setOutlineCurrent } from "./outlineView";
 import type { OpenInsertMenu } from "./outlineInsert";
 import { HEADING_OUTLINE_ICON_ID } from "./icons";
 
@@ -33,6 +34,7 @@ export class HeadingOutlineController {
     private listDepthSelect = document.createElement("select");
     private editor: HeadingEditor | null = null;
     private entries: HeadingEntry[] = [];
+    private collapsedHeadingIds = new Set<string>();
     private expanded = false;
     private menuOpen = false;
     private disposed = false;
@@ -173,6 +175,7 @@ export class HeadingOutlineController {
         this.observer.disconnect();
         this.editor = editor;
         this.entries = [];
+        this.collapsedHeadingIds.clear();
         this.body.replaceChildren();
         this.status.textContent = "";
         this.setExpanded(false);
@@ -261,8 +264,16 @@ export class HeadingOutlineController {
     private render() {
         if (this.disposed) return;
         const fragment = document.createDocumentFragment();
-        for (const entry of this.entries) {
+        const collapsibleIds = getCollapsibleHeadingIds(this.entries);
+        for (const id of this.collapsedHeadingIds) {
+            if (!collapsibleIds.has(id)) this.collapsedHeadingIds.delete(id);
+        }
+        for (const entry of filterCollapsedHeadingEntries(this.entries, this.collapsedHeadingIds)) {
+            const container = document.createElement("div");
+            container.className = "heading-outline-floating__entry";
+            container.style.setProperty("--outline-indent", `${10 + (entry.depth - 1) * 14}px`);
             const row = createOutlineRow(entry);
+            row.classList.add("heading-outline-floating__item");
             if (entry.embedId) row.dataset.embedId = entry.embedId;
             const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             icon.classList.add("heading-outline-floating__icon");
@@ -273,7 +284,12 @@ export class HeadingOutlineController {
                 entry.kind === "list" ? "#iconListItem" : `#iconH${entry.level}`);
             icon.append(use);
             row.insertBefore(icon, row.lastChild);
-            fragment.append(row);
+            if (collapsibleIds.has(entry.id)) {
+                container.append(createOutlineFoldButton(entry, !this.collapsedHeadingIds.has(entry.id),
+                    "heading-outline-floating__fold"));
+            }
+            container.append(row);
+            fragment.append(container);
         }
         if (!this.entries.length && this.status.textContent) {
             const retry = createOutlineRow({ id: "", depth: 1, text: "重新读取标题大纲" });
@@ -286,6 +302,16 @@ export class HeadingOutlineController {
     }
 
     private onClick = async (event: MouseEvent) => {
+        const toggle = (event.target as Element).closest<HTMLButtonElement>("button[data-outline-toggle]");
+        if (toggle) {
+            event.preventDefault();
+            event.stopPropagation();
+            const id = toggle.dataset.outlineToggle!;
+            if (this.collapsedHeadingIds.has(id)) this.collapsedHeadingIds.delete(id);
+            else this.collapsedHeadingIds.add(id);
+            this.render();
+            return;
+        }
         const row = (event.target as Element).closest<HTMLButtonElement>("button[data-id]");
         const editor = this.editor;
         if (!row || !editor) return;

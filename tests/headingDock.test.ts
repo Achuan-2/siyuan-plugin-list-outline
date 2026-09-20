@@ -130,6 +130,38 @@ test("标题大纲 Dock：点击定位与右键菜单插入同级", async () => 
     } finally { env.cleanup(); }
 });
 
+test("标题大纲 Dock：用箭头折叠和展开标题后代，搜索时仍可找到隐藏标题", async () => {
+    const env = setup();
+    try {
+        await settle();
+        const visibleIds = () => Array.from(env.container.querySelectorAll<HTMLButtonElement>("button[data-id]"))
+            .map(row => row.dataset.id);
+        let toggle = env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="h3"]')!;
+        assert.ok(toggle);
+        assert.equal(toggle.getAttribute("aria-expanded"), "true");
+        assert.equal(toggle.querySelector("use")?.getAttribute("href"), "#iconDown");
+
+        toggle.click();
+        assert.deepEqual(visibleIds(), ["h1", "h3", "h2"]);
+        assert.equal(env.navigations.length, 0);
+        toggle = env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="h3"]')!;
+        assert.equal(toggle.getAttribute("aria-expanded"), "false");
+        assert.equal(toggle.querySelector("use")?.getAttribute("href"), "#iconRight");
+
+        const searchInput = env.container.querySelector<HTMLInputElement>(".heading-outline-dock__search-input")!;
+        searchInput.value = "六级";
+        searchInput.dispatchEvent(new env.win.Event("input"));
+        assert.deepEqual(visibleIds(), ["h6"]);
+        assert.equal(env.container.querySelector("[data-outline-toggle]"), null);
+
+        searchInput.value = "";
+        searchInput.dispatchEvent(new env.win.Event("input"));
+        toggle = env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="h3"]')!;
+        toggle.click();
+        assert.deepEqual(visibleIds(), ["h1", "h3", "h6", "h2"]);
+    } finally { env.cleanup(); }
+});
+
 test("标题大纲 Dock：鼠标移入不定位，点击标题或段落才定位高亮", async () => {
     const env = setup();
     try {

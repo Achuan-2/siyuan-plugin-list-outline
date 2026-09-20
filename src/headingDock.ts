@@ -1,8 +1,9 @@
-import { findEmbeddedOutlineTarget, flattenHeadingTree, includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
+import { filterCollapsedHeadingEntries, findEmbeddedOutlineTarget, flattenHeadingTree, getCollapsibleHeadingIds,
+    includeListsInHeadingTree, type HeadingEntry } from "./headingTree";
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import type { HeadingEditor } from "./headingOutline";
 import type { OpenInsertMenu } from "./outlineInsert";
-import { createOutlineLabel } from "./outlineView";
+import { createOutlineFoldButton, createOutlineLabel } from "./outlineView";
 
 export interface HeadingDockOptions {
     getEditors(): HeadingEditor[];
@@ -23,6 +24,7 @@ export class HeadingOutlineDockView {
     private searchInput = document.createElement("input");
     private editor: HeadingEditor | null = null;
     private entries: HeadingEntry[] = [];
+    private collapsedHeadingIds = new Set<string>();
     private searchQuery = "";
     private version = 0;
     private timer?: ReturnType<typeof setTimeout>;
@@ -162,6 +164,7 @@ export class HeadingOutlineDockView {
         this.observer.disconnect();
         this.editor = editor;
         this.entries = [];
+        this.collapsedHeadingIds.clear();
         this.body.replaceChildren();
         this.status.textContent = "";
         if (!editor) {
@@ -248,9 +251,13 @@ export class HeadingOutlineDockView {
         }
 
         const query = this.searchQuery.toLowerCase();
+        const collapsibleIds = getCollapsibleHeadingIds(this.entries);
+        for (const id of this.collapsedHeadingIds) {
+            if (!collapsibleIds.has(id)) this.collapsedHeadingIds.delete(id);
+        }
         const filteredEntries = query
             ? this.entries.filter(e => e.text.toLowerCase().includes(query))
-            : this.entries;
+            : filterCollapsedHeadingEntries(this.entries, this.collapsedHeadingIds);
 
         if (!this.entries.length) {
             this.status.textContent = this.status.textContent || "当前文档暂无标题";
@@ -269,12 +276,15 @@ export class HeadingOutlineDockView {
         this.status.hidden = true;
         const fragment = document.createDocumentFragment();
         for (const entry of filteredEntries) {
+            const container = document.createElement("div");
+            container.className = "heading-outline-dock__entry";
+            container.style.setProperty("--outline-indent", `${12 + (entry.depth - 1) * 16}px`);
             const item = document.createElement("button");
             item.type = "button";
             item.className = "b3-list-item heading-outline-dock__item";
             item.dataset.id = entry.id;
             if (entry.embedId) item.dataset.embedId = entry.embedId;
-            item.style.paddingLeft = `${12 + (entry.depth - 1) * 16}px`;
+            item.style.paddingLeft = "calc(var(--outline-indent) + 18px)";
 
             const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             icon.classList.add("b3-list-item__graphic", "heading-outline-dock__icon");
@@ -291,7 +301,12 @@ export class HeadingOutlineDockView {
             item.append(icon, text);
             if (!entry.images?.length || entry.images.some(image => image.title)) item.title = entry.text;
             item.setAttribute("aria-label", `第 ${entry.depth} 层：${entry.text}`);
-            fragment.append(item);
+            if (!query && collapsibleIds.has(entry.id)) {
+                container.append(createOutlineFoldButton(entry, !this.collapsedHeadingIds.has(entry.id),
+                    "heading-outline-dock__fold"));
+            }
+            container.append(item);
+            fragment.append(container);
         }
         const scrollTop = this.body.scrollTop;
         this.body.replaceChildren(fragment);
@@ -300,6 +315,16 @@ export class HeadingOutlineDockView {
     }
 
     private onClick = async (event: MouseEvent) => {
+        const toggle = (event.target as Element).closest<HTMLButtonElement>("button[data-outline-toggle]");
+        if (toggle) {
+            event.preventDefault();
+            event.stopPropagation();
+            const id = toggle.dataset.outlineToggle!;
+            if (this.collapsedHeadingIds.has(id)) this.collapsedHeadingIds.delete(id);
+            else this.collapsedHeadingIds.add(id);
+            this.render();
+            return;
+        }
         const row = (event.target as Element).closest<HTMLButtonElement>("button[data-id]");
         const editor = this.editor;
         if (!row || !editor) return;

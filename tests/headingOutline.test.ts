@@ -237,6 +237,30 @@ test("标题大纲右键传递对应标题与文档上下文", async () => {
     } finally { env.cleanup(); }
 });
 
+test("悬浮标题大纲用箭头折叠和展开标题后代，且不触发定位", async () => {
+    const env = setup();
+    try {
+        await settle();
+        const visibleIds = () => Array.from(env.panel.querySelectorAll<HTMLButtonElement>("button[data-id]"))
+            .map(row => row.dataset.id);
+        let toggle = env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!;
+        assert.ok(toggle);
+        assert.equal(toggle.getAttribute("aria-expanded"), "true");
+        assert.equal(toggle.querySelector("use")?.getAttribute("href"), "#iconDown");
+
+        toggle.click();
+        assert.deepEqual(visibleIds(), ["h1", "h2"]);
+        assert.equal(env.navigations.length, 0);
+        toggle = env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!;
+        assert.equal(toggle.getAttribute("aria-expanded"), "false");
+        assert.equal(toggle.querySelector("use")?.getAttribute("href"), "#iconRight");
+
+        toggle.click();
+        assert.deepEqual(visibleIds(), ["h1", "h3", "h6", "h2"]);
+        assert.equal(env.panel.querySelector('[data-outline-toggle="h6"]'), null);
+    } finally { env.cleanup(); }
+});
+
 test("读取原生 name/blocks/content/children 树，跳级标题按真实父子层级缩进", () => {
     const env = setup();
     try {
