@@ -96,6 +96,11 @@ export class HeadingOutlineController {
         locate.addEventListener("click", () => this.locateCurrent());
         const refresh = createActionButton("iconRefresh", "刷新大纲增强");
         refresh.addEventListener("click", () => void this.refresh());
+        const close = createActionButton("iconClose", "关闭大纲增强");
+        close.addEventListener("click", event => {
+            event.stopPropagation();
+            this.setExpanded(false);
+        });
         this.listDepthSelect.className = "b3-select";
         this.listDepthSelect.setAttribute("aria-label", "大纲增强列表层级");
         this.listDepthSelect.title = "选择大纲增强中显示的列表层级";
@@ -120,7 +125,7 @@ export class HeadingOutlineController {
         });
         header.append(title);
         if (options.setListDepth) header.append(this.listDepthSelect);
-        header.append(locate, refresh);
+        header.append(locate, refresh, close);
         this.body.className = "list-outline-floating__body";
         this.status.className = "list-outline-floating__status";
         this.status.setAttribute("role", "status");

@@ -11,7 +11,7 @@ const tree = [{ id: "h1", name: "<strong>一级标题</strong>", subType: "h1", 
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
 
-function setup(request?: (url: string, data: Record<string, unknown>) => Promise<any>) {
+function setup(request?: (url: string, data: Record<string, unknown>) => Promise<any>, mobile = false) {
     const dom = new JSDOM('<div class="protyle"><div class="protyle-content"><div class="protyle-wysiwyg"><div data-type="NodeHeading" data-node-id="h1"><div contenteditable="true">标题</div></div></div></div></div>', { pretendToBeVisual: true });
     const win = dom.window;
     for (const key of ["window", "document", "Element", "Node", "HTMLElement", "DOMParser", "MutationObserver"]) {
@@ -43,6 +43,7 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
         reportError: () => {},
         openInsertMenu: (event, target) => { event.preventDefault(); menus.push(target); },
         openHeadingLevelMenu: (_target, currentLevel, selectLevel) => levelMenus.push({ currentLevel, selectLevel }),
+        isMobile: () => mobile,
     });
 
     return {
@@ -175,9 +176,18 @@ test("大纲增强 Dock：支持全部折叠、全部展开和按实际标题级
         const collapseAll = toolbar.querySelector<HTMLButtonElement>('button[data-action="collapse-all"]')!;
         const expandAll = toolbar.querySelector<HTMLButtonElement>('button[data-action="expand-all"]')!;
         const expandLevel = toolbar.querySelector<HTMLButtonElement>('button[data-action="expand-level"]')!;
+        const minimize = toolbar.querySelector<HTMLButtonElement>('button[data-action="minimize"]')!;
         assert.equal(collapseAll.querySelector("use")?.getAttribute("href"), "#iconContract");
         assert.equal(expandAll.querySelector("use")?.getAttribute("href"), "#iconExpand");
         assert.equal(expandLevel.querySelector("use")?.getAttribute("href"), "#iconExpandLevel");
+        assert.equal(minimize.querySelector("use")?.getAttribute("href"), "#iconMin");
+        assert.equal(minimize.dataset.type, "min");
+        let delegatedMinimizeClicks = 0;
+        env.container.addEventListener("click", event => {
+            if ((event.target as Element).closest('[data-type="min"]')) delegatedMinimizeClicks++;
+        });
+        minimize.click();
+        assert.equal(delegatedMinimizeClicks, 1);
 
         collapseAll.click();
         assert.deepEqual(visibleIds(), ["h1", "h2"]);
@@ -199,6 +209,14 @@ test("大纲增强 Dock：支持全部折叠、全部展开和按实际标题级
         assert.equal(env.levelMenus.at(-1)?.currentLevel, 3);
         env.levelMenus.at(-1)!.selectLevel(4);
         assert.deepEqual(visibleIds(), ["h1", "h3", "h6", "h2"]);
+    } finally { env.cleanup(); }
+});
+
+test("大纲增强 Dock：移动端不显示最小化按钮", async () => {
+    const env = setup(undefined, true);
+    try {
+        await settle();
+        assert.equal(env.container.querySelector('button[data-action="minimize"]'), null);
     } finally { env.cleanup(); }
 });
 

@@ -44,6 +44,7 @@ export default class ListOutlinePlugin extends Plugin {
                     setListDepth: depth => this.saveSettings({ ...this.settings, headingListDepth: depth }),
                     openInsertMenu: this.openInsertMenu,
                     openHeadingLevelMenu: this.openHeadingLevelMenu,
+                    isMobile: () => getFrontend().includes("mobile"),
                     request: this.request,
                     navigate: (id, folded) => {
                         const mobile = getFrontend().includes("mobile");

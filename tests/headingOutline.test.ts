@@ -367,10 +367,13 @@ test("使用文档 ID 请求完整大纲，悬停展开，折叠标题使用原�
         assert.equal(env.panel.classList.contains("heading-outline-floating--icon"), false);
         const locate = env.panel.querySelector<HTMLButtonElement>('button[aria-label="定位当前位置"]')!;
         const refresh = env.panel.querySelector<HTMLButtonElement>('button[aria-label="刷新大纲增强"]')!;
+        const close = env.panel.querySelector<HTMLButtonElement>('.heading-outline-floating__action[aria-label="关闭大纲增强"]')!;
         assert.equal(locate.textContent, "");
         assert.equal(locate.querySelector("use")?.getAttribute("href"), "#iconFocus");
         assert.equal(refresh.textContent, "");
         assert.equal(refresh.querySelector("use")?.getAttribute("href"), "#iconRefresh");
+        assert.equal(close.textContent, "");
+        assert.equal(close.querySelector("use")?.getAttribute("href"), "#iconClose");
         let scrollCount = 0;
         env.panel.querySelectorAll<HTMLElement>("button[data-id]").forEach(row => {
             row.scrollIntoView = () => { scrollCount++; };
@@ -379,13 +382,17 @@ test("使用文档 ID 请求完整大纲，悬停展开，折叠标题使用原�
         env.panel.dispatchEvent(new env.win.MouseEvent("pointerenter"));
         assert.equal(scrollCount, 1);
         assert.equal(env.panel.style.width, "300px");
+        close.click();
+        assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), false);
+        assert.equal(env.panel.style.width, "48px");
+        env.panel.dispatchEvent(new env.win.MouseEvent("pointerenter"));
         env.panel.querySelector<HTMLButtonElement>('[data-id="h6"]')!.click();
         await settle();
         assert.deepEqual(env.navigations, [{ id: "h6", folded: true }]);
         assert.equal(env.calls.at(-1)?.url, "/api/block/checkBlockFold");
         env.panel.dispatchEvent(new env.win.MouseEvent("pointerleave"));
         assert.equal(env.panel.style.width, "48px");
-        assert.equal(scrollCount, 1);
+        assert.equal(scrollCount, 2);
     } finally { env.cleanup(); }
 });
 
@@ -445,7 +452,9 @@ test("移动端悬浮大纲增强显示为按钮，点击后展开并可再次�
         assert.equal(toggle.hidden, true);
         assert.equal(env.panel.querySelectorAll('.list-outline-floating__item').length, 4);
 
-        toggle.click();
+        const close = env.panel.querySelector<HTMLButtonElement>('.heading-outline-floating__action[aria-label="关闭大纲增强"]')!;
+        assert.equal(close.querySelector("use")?.getAttribute("href"), "#iconClose");
+        close.click();
         assert.equal(toggle.getAttribute("aria-expanded"), "false");
         assert.equal(toggle.hidden, false);
         assert.equal(env.panel.classList.contains("list-outline-floating--expanded"), false);

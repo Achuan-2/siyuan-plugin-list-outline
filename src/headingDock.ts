@@ -21,6 +21,7 @@ export interface HeadingDockOptions {
     openHeadingLevelMenu?: OpenHeadingLevelMenu;
     getSettings?(): OutlineSettings;
     setListDepth?(depth: number): Promise<unknown>;
+    isMobile?(): boolean;
 }
 
 function createToolbarButton(
@@ -113,9 +114,14 @@ export class HeadingOutlineDockView {
         const expandAllBtn = createToolbarButton("全部展开", "iconExpand", "expand-all", () => this.expandAll());
         const collapseAllBtn = createToolbarButton("全部折叠", "iconContract", "collapse-all", () => this.collapseAll());
         const refreshBtn = createToolbarButton("刷新大纲", "iconRefresh", "refresh", () => void this.refresh());
+        const minimizeBtn = createToolbarButton("最小化大纲增强", "iconMin", "minimize", () => {});
+        // Plugin.addDock 会代理 data-type="min" 的点击，并用真实运行时 type
+        // 调用所属 Dock 的 toggleModel，与思源原生 Dock 的最小化行为一致。
+        minimizeBtn.dataset.type = "min";
 
         this.header.append(logo, space);
         this.header.append(expandLevelBtn, expandAllBtn, collapseAllBtn, refreshBtn);
+        if (!this.options.isMobile?.()) this.header.append(minimizeBtn);
 
         // 搜索栏
         const searchContainer = document.createElement("div");
