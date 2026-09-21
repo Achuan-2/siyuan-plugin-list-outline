@@ -185,7 +185,12 @@ test("大纲增强 Dock：支持全部折叠、全部展开和按实际标题级
         expandAll.click();
         assert.deepEqual(visibleIds(), ["h1", "h3", "h6", "h2"]);
 
+        let expandLevelClickBubbled = false;
+        const onDocumentClick = () => { expandLevelClickBubbled = true; };
+        env.win.document.addEventListener("click", onDocumentClick);
         expandLevel.click();
+        env.win.document.removeEventListener("click", onDocumentClick);
+        assert.equal(expandLevelClickBubbled, false);
         assert.equal(env.levelMenus.at(-1)?.currentLevel, 6);
         env.levelMenus.at(-1)!.selectLevel(3);
         assert.deepEqual(visibleIds(), ["h1", "h3", "h2"]);

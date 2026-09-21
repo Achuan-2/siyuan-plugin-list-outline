@@ -27,7 +27,7 @@ function createToolbarButton(
     label: string,
     icon: string,
     action: string,
-    onClick: (button: HTMLButtonElement) => void,
+    onClick: (button: HTMLButtonElement, event: MouseEvent) => void,
 ) {
     const button = document.createElement("button");
     button.type = "button";
@@ -39,7 +39,7 @@ function createToolbarButton(
     use.setAttribute("href", `#${icon}`);
     svg.append(use);
     button.append(svg);
-    button.addEventListener("click", () => onClick(button));
+    button.addEventListener("click", event => onClick(button, event));
     return button;
 }
 
@@ -102,7 +102,11 @@ export class HeadingOutlineDockView {
             }
         });
 
-        const expandLevelBtn = createToolbarButton("展开标题层级", "iconExpandLevel", "expand-level", button => {
+        const expandLevelBtn = createToolbarButton("展开标题层级", "iconExpandLevel", "expand-level", (button, event) => {
+            // 思源会在全局 click 处理器中关闭菜单；阻止本次点击继续冒泡，
+            // 否则刚打开的标题层级菜单会在同一次点击中立即被关闭。
+            event.preventDefault();
+            event.stopPropagation();
             this.options.openHeadingLevelMenu?.(button, this.expandedHeadingLevel,
                 level => this.expandToHeadingLevel(level));
         });
