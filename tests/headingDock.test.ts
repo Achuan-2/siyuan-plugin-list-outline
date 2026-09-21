@@ -25,6 +25,7 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     const calls: { url: string; data: Record<string, unknown> }[] = [];
     const navigations: { id: string; folded: boolean }[] = [];
     const menus: any[] = [];
+    const levelMenus: { currentLevel: number; selectLevel(level: number): void }[] = [];
     let settings = normalizeSettings({ enableHeadingDock: true });
 
     const container = win.document.createElement("div");
@@ -41,10 +42,11 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
         navigate: (id, folded) => navigations.push({ id, folded }),
         reportError: () => {},
         openInsertMenu: (event, target) => { event.preventDefault(); menus.push(target); },
+        openHeadingLevelMenu: (_target, currentLevel, selectLevel) => levelMenus.push({ currentLevel, selectLevel }),
     });
 
     return {
-        win, editors, calls, navigations, menus, dock, container,
+        win, editors, calls, navigations, menus, levelMenus, dock, container,
         setSettings: (value: Parameters<typeof normalizeSettings>[0]) => {
             settings = normalizeSettings(value);
             dock.refreshSettings();
@@ -158,6 +160,39 @@ test("大纲增强 Dock：用箭头折叠和展开标题后代，搜索时仍可
         searchInput.dispatchEvent(new env.win.Event("input"));
         toggle = env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="h3"]')!;
         toggle.click();
+        assert.deepEqual(visibleIds(), ["h1", "h3", "h6", "h2"]);
+    } finally { env.cleanup(); }
+});
+
+test("大纲增强 Dock：支持全部折叠、全部展开和按实际标题级别展开", async () => {
+    const env = setup();
+    try {
+        await settle();
+        const visibleIds = () => Array.from(env.container.querySelectorAll<HTMLButtonElement>("button[data-id]"))
+            .map(row => row.dataset.id);
+        const toolbar = env.container.querySelector(".heading-outline-dock__header")!;
+
+        const collapseAll = toolbar.querySelector<HTMLButtonElement>('button[data-action="collapse-all"]')!;
+        const expandAll = toolbar.querySelector<HTMLButtonElement>('button[data-action="expand-all"]')!;
+        const expandLevel = toolbar.querySelector<HTMLButtonElement>('button[data-action="expand-level"]')!;
+        assert.equal(collapseAll.querySelector("use")?.getAttribute("href"), "#iconContract");
+        assert.equal(expandAll.querySelector("use")?.getAttribute("href"), "#iconExpand");
+        assert.equal(expandLevel.querySelector("use")?.getAttribute("href"), "#iconExpandLevel");
+
+        collapseAll.click();
+        assert.deepEqual(visibleIds(), ["h1", "h2"]);
+
+        expandAll.click();
+        assert.deepEqual(visibleIds(), ["h1", "h3", "h6", "h2"]);
+
+        expandLevel.click();
+        assert.equal(env.levelMenus.at(-1)?.currentLevel, 6);
+        env.levelMenus.at(-1)!.selectLevel(3);
+        assert.deepEqual(visibleIds(), ["h1", "h3", "h2"]);
+
+        expandLevel.click();
+        assert.equal(env.levelMenus.at(-1)?.currentLevel, 3);
+        env.levelMenus.at(-1)!.selectLevel(4);
         assert.deepEqual(visibleIds(), ["h1", "h3", "h6", "h2"]);
     } finally { env.cleanup(); }
 });

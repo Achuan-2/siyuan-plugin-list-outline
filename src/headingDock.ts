@@ -6,14 +6,41 @@ import type { HeadingEditor } from "./headingOutline";
 import type { OpenInsertMenu } from "./outlineInsert";
 import { createOutlineFoldButton, createOutlineLabel } from "./outlineView";
 
+export type OpenHeadingLevelMenu = (
+    target: HTMLElement,
+    currentLevel: number,
+    selectLevel: (level: number) => void,
+) => void;
+
 export interface HeadingDockOptions {
     getEditors(): HeadingEditor[];
     request(url: string, data: Record<string, unknown>): Promise<any>;
     navigate(id: string, folded: boolean): void;
     reportError(message: string): void;
     openInsertMenu?: OpenInsertMenu;
+    openHeadingLevelMenu?: OpenHeadingLevelMenu;
     getSettings?(): OutlineSettings;
     setListDepth?(depth: number): Promise<unknown>;
+}
+
+function createToolbarButton(
+    label: string,
+    icon: string,
+    action: string,
+    onClick: (button: HTMLButtonElement) => void,
+) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "block__icon b3-tooltips b3-tooltips__s";
+    button.dataset.action = action;
+    button.setAttribute("aria-label", label);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", `#${icon}`);
+    svg.append(use);
+    button.append(svg);
+    button.addEventListener("click", () => onClick(button));
+    return button;
 }
 
 export class HeadingOutlineDockView {
@@ -26,6 +53,7 @@ export class HeadingOutlineDockView {
     private editor: HeadingEditor | null = null;
     private entries: HeadingEntry[] = [];
     private collapsedEntryIds = new Set<string>();
+    private expandedHeadingLevel = 6;
     private searchQuery = "";
     private version = 0;
     private timer?: ReturnType<typeof setTimeout>;
@@ -74,19 +102,16 @@ export class HeadingOutlineDockView {
             }
         });
 
-        const refreshBtn = document.createElement("button");
-        refreshBtn.className = "block__icon b3-tooltips b3-tooltips__s";
-        refreshBtn.setAttribute("aria-label", "刷新大纲");
-        const refreshIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        const refreshUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
-        refreshUse.setAttribute("href", "#iconRefresh");
-        refreshIcon.append(refreshUse);
-        refreshBtn.append(refreshIcon);
-        refreshBtn.addEventListener("click", () => void this.refresh());
+        const expandLevelBtn = createToolbarButton("展开标题层级", "iconExpandLevel", "expand-level", button => {
+            this.options.openHeadingLevelMenu?.(button, this.expandedHeadingLevel,
+                level => this.expandToHeadingLevel(level));
+        });
+        const expandAllBtn = createToolbarButton("全部展开", "iconExpand", "expand-all", () => this.expandAll());
+        const collapseAllBtn = createToolbarButton("全部折叠", "iconContract", "collapse-all", () => this.collapseAll());
+        const refreshBtn = createToolbarButton("刷新大纲", "iconRefresh", "refresh", () => void this.refresh());
 
         this.header.append(logo, space);
-        if (options.setListDepth) this.header.append(this.listDepthSelect);
-        this.header.append(refreshBtn);
+        this.header.append(expandLevelBtn, expandAllBtn, collapseAllBtn, refreshBtn);
 
         // 搜索栏
         const searchContainer = document.createElement("div");
@@ -115,6 +140,7 @@ export class HeadingOutlineDockView {
             }
         });
         searchContainer.append(searchIcon, this.searchInput);
+        if (options.setListDepth) searchContainer.append(this.listDepthSelect);
 
         // 列表主体与状态栏
         this.body.className = "heading-outline-dock__body b3-list b3-list--background fn__flex-1";
@@ -239,6 +265,33 @@ export class HeadingOutlineDockView {
             this.render();
         }
         void this.refresh();
+    }
+
+    private expandAll() {
+        this.collapsedEntryIds.clear();
+        this.render();
+    }
+
+    private collapseAll() {
+        this.collapsedEntryIds = getCollapsibleEntryIds(this.entries);
+        this.render();
+    }
+
+    /** 与思源原生大纲一致：H1-H5 折叠该级及更深标题，H6 表示全部展开。 */
+    private expandToHeadingLevel(targetLevel: number) {
+        const level = Math.max(1, Math.min(6, Math.trunc(targetLevel)));
+        this.expandedHeadingLevel = level;
+        this.collapsedEntryIds.clear();
+        if (level < 6) {
+            const collapsibleIds = getCollapsibleEntryIds(this.entries);
+            for (const entry of this.entries) {
+                const isHeading = !entry.kind || entry.kind === "heading";
+                if (isHeading && entry.level >= level && collapsibleIds.has(entry.id)) {
+                    this.collapsedEntryIds.add(entry.id);
+                }
+            }
+        }
+        this.render();
     }
 
     private render() {

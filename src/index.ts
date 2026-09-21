@@ -4,11 +4,12 @@ import SettingPanel from "./SettingPanel.svelte";
 import { normalizeSettings, type OutlineSettings } from "./defaultSettings";
 import { ListOutlineController } from "./listOutline";
 import { HeadingOutlineController, type HeadingEditor } from "./headingOutline";
-import { HeadingOutlineDockView } from "./headingDock";
+import { HeadingOutlineDockView, type OpenHeadingLevelMenu } from "./headingDock";
 import { HEADING_OUTLINE_ICON, HEADING_OUTLINE_ICON_ID } from "./icons";
 import { insertOutlineSibling, insertIntoOutlineEditor, type OutlineInsertTarget, type OpenInsertMenu } from "./outlineInsert";
 
 const SETTINGS_FILE = "settings.json";
+const HEADING_LEVEL_LABELS = ["一级标题块", "二级标题块", "三级标题块", "四级标题块", "五级标题块", "六级标题块"];
 
 export default class ListOutlinePlugin extends Plugin {
     settings: OutlineSettings = normalizeSettings();
@@ -19,6 +20,7 @@ export default class ListOutlinePlugin extends Plugin {
     private settingsQueue: Promise<unknown> = Promise.resolve();
     private dialogs = new Set<Dialog>();
     private insertMenu?: Menu;
+    private headingLevelMenu?: Menu;
     private inserting = new Set<string>();
     private headingDockRegistered = false;
 
@@ -41,6 +43,7 @@ export default class ListOutlinePlugin extends Plugin {
                     getSettings: () => this.settings,
                     setListDepth: depth => this.saveSettings({ ...this.settings, headingListDepth: depth }),
                     openInsertMenu: this.openInsertMenu,
+                    openHeadingLevelMenu: this.openHeadingLevelMenu,
                     request: this.request,
                     navigate: (id, folded) => {
                         const mobile = getFrontend().includes("mobile");
@@ -143,6 +146,7 @@ export default class ListOutlinePlugin extends Plugin {
 
     private syncFeatures() {
         this.insertMenu?.close();
+        this.headingLevelMenu?.close();
         if (this.settings.enableHeadingDock) this.registerHeadingDock();
         else this.unregisterHeadingDock();
         if (this.settings.enableListOutline && !this.outline) this.outline = new ListOutlineController({
@@ -192,6 +196,7 @@ export default class ListOutlinePlugin extends Plugin {
     onunload() {
         this.disposed = true;
         this.insertMenu?.close();
+        this.headingLevelMenu?.close();
         this.outline?.destroy();
         this.outline = undefined;
         this.headingOutline?.destroy();
@@ -269,6 +274,24 @@ export default class ListOutlinePlugin extends Plugin {
             },
         });
         menu.open({ x: event.clientX, y: event.clientY });
+    };
+
+    private openHeadingLevelMenu: OpenHeadingLevelMenu = (target, currentLevel, selectLevel) => {
+        this.headingLevelMenu?.close();
+        const menu = new Menu(`${this.name}-heading-expand-level`, () => {
+            if (this.headingLevelMenu === menu) this.headingLevelMenu = undefined;
+        });
+        this.headingLevelMenu = menu;
+        for (let level = 1; level <= 6; level++) {
+            menu.addItem({
+                icon: `iconH${level}`,
+                label: HEADING_LEVEL_LABELS[level - 1],
+                current: currentLevel === level,
+                click: () => selectLevel(level),
+            });
+        }
+        const rect = target.getBoundingClientRect();
+        menu.open({ x: rect.left, y: rect.bottom, h: rect.height });
     };
 
     openSetting() {

@@ -272,7 +272,7 @@
     &__header {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 4px;
         padding: 4px 8px;
         border-bottom: 1px solid var(--b3-border-color);
         flex: none;
@@ -286,7 +286,7 @@
     }
 
     &__list-depth {
-        width: 112px;
+        width: 104px;
         height: 26px;
         padding: 2px 22px 2px 8px;
         font-size: 12px;
