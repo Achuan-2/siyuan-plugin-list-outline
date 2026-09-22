@@ -12,7 +12,8 @@ const tree = [{ id: "h1", name: "<strong>一级标题</strong>", subType: "h1", 
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
 
-function setup(request?: (url: string, data: Record<string, unknown>) => Promise<any>, mobile = false) {
+function setup(request?: (url: string, data: Record<string, unknown>) => Promise<any>, mobile = false,
+    withEditor = true) {
     const dom = new JSDOM('<div class="protyle"><div class="protyle-content"><div class="protyle-wysiwyg"><div data-type="NodeHeading" data-node-id="h1"><div contenteditable="true">标题</div></div></div></div></div>', { pretendToBeVisual: true });
     const win = dom.window;
     for (const key of ["window", "document", "Element", "Node", "HTMLElement", "DOMParser", "MutationObserver"]) {
@@ -33,6 +34,7 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
         preview: false,
         transaction: (operations, undoOperations) => transactions.push({ operations, undoOperations }),
     }];
+    if (!withEditor) editors.length = 0;
     const menus: any[] = [];
     const levelMenus: { currentLevel: number; selectLevel(level: number): void }[] = [];
     let settings = normalizeSettings({ enableHeadingDock: true });
@@ -68,6 +70,15 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
         },
     };
 }
+
+test("大纲增强 Dock：没有可见编辑器时仍可正常挂载", () => {
+    const env = setup(undefined, false, false);
+    try {
+        env.dock.syncEditors();
+        assert.equal(env.container.querySelector(".heading-outline-dock__status")?.textContent, "暂无活动文档");
+        assert.equal(env.container.querySelectorAll("button[data-id]").length, 0);
+    } finally { env.cleanup(); }
+});
 
 test("标题拖动计划：支持同级排序、成为子标题并拒绝循环移动", () => {
     const entries = [
@@ -411,7 +422,7 @@ test("大纲增强 Dock：支持分别折叠段落和列表项的子项", async 
     } finally { env.cleanup(); }
 });
 
-test("大纲增强 Dock：鼠标移入只更新高亮，点击时才滚动到对应条目", async () => {
+test("大纲增强 Dock：鼠标移入和编辑器滚动不更新高亮，点击块时才更新", async () => {
     const env = setup();
     try {
         await settle();
@@ -430,11 +441,22 @@ test("大纲增强 Dock：鼠标移入只更新高亮，点击时才滚动到对
         env.container.querySelector<HTMLElement>('button[data-id="h3"]')!.scrollIntoView = () => { scrolled = true; };
         h3El.firstElementChild!.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
         env.dock.syncEditors();
-        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h1");
         assert.equal(scrolled, false);
+        h3El.getBoundingClientRect = () => ({ ...h1El.getBoundingClientRect(), top: 40 });
+        env.editors[0].content.closest(".protyle-content")!
+            .dispatchEvent(new env.win.Event("scroll", { bubbles: true }));
+        await settle();
+        env.dock.syncEditors();
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h1");
+
         h3El.firstElementChild!.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
         assert.equal(scrolled, true);
+        env.editors[0].content.closest(".protyle-content")!
+            .dispatchEvent(new env.win.Event("scroll", { bubbles: true }));
+        await settle();
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
 
         const paragraph = env.win.document.createElement("div");
         paragraph.dataset.type = "NodeParagraph";
@@ -442,13 +464,13 @@ test("大纲增强 Dock：鼠标移入只更新高亮，点击时才滚动到对
         env.editors[0].content.append(paragraph);
         h1El.click();
         paragraph.firstElementChild!.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
-        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h1");
         paragraph.firstElementChild!.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
     } finally { env.cleanup(); }
 });
 
-test("大纲增强 Dock：鼠标位于空列表项时直接高亮空列表项", async () => {
+test("大纲增强 Dock：点击空列表项时直接高亮空列表项", async () => {
     const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
         '<div data-type="NodeList" data-node-id="list">' +
         '<div data-type="NodeListItem" data-node-id="filled"><div data-type="NodeParagraph" data-node-id="filled-p">' +
@@ -464,7 +486,7 @@ test("大纲增强 Dock：鼠标位于空列表项时直接高亮空列表项", 
             '[data-node-id="empty"] [contenteditable="true"]'
         )!;
 
-        emptyContent.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+        emptyContent.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
 
         const current = env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus");
         assert.equal(current?.dataset.id, "empty");
@@ -472,7 +494,7 @@ test("大纲增强 Dock：鼠标位于空列表项时直接高亮空列表项", 
     } finally { env.cleanup(); }
 });
 
-test("大纲增强 Dock：聚焦列表前的父级段落时高亮该段落而非前一项", async () => {
+test("大纲增强 Dock：聚焦块不改变高亮，点击列表前的父级段落后才高亮该段落", async () => {
     const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
         '<div data-type="NodeParagraph" data-node-id="list-parent"><div contenteditable="true">列表说明</div></div>' +
         '<div data-type="NodeList" data-node-id="list">' +
@@ -484,8 +506,11 @@ test("大纲增强 Dock：聚焦列表前的父级段落时高亮该段落而非
         env.setSettings({ enableHeadingDock: true, headingListDepth: 1 });
         await new Promise(resolve => setTimeout(resolve, 680));
         const content = env.editors[0].content.querySelector<HTMLElement>('[data-node-id="list-parent"] [contenteditable="true"]')!;
+        const initialId = env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id;
 
         content.dispatchEvent(new env.win.FocusEvent("focusin", { bubbles: true }));
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, initialId);
+        content.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
 
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id,
             "list-parent");
@@ -538,7 +563,7 @@ test("大纲增强 Dock：列表下拉框选择不显示或具体显示层级", 
         env.editors[0].content.innerHTML = snapshot;
         const listContent = env.editors[0].content.querySelector('[data-node-id="l1"] [contenteditable]')!;
         listContent.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
-        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "l1");
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h1");
         listContent.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "l1");
 

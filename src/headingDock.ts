@@ -69,6 +69,7 @@ export class HeadingOutlineDockView {
     private searchInput = document.createElement("input");
     private editor: HeadingEditor | null = null;
     private entries: HeadingEntry[] = [];
+    private currentEntryId = "";
     private collapsedEntryIds = new Set<string>();
     private expandedHeadingLevel = 6;
     private searchQuery = "";
@@ -78,7 +79,7 @@ export class HeadingOutlineDockView {
     private frame = 0;
     private disposed = false;
     private observer: MutationObserver;
-    private pointerElement: HTMLElement | null = null;
+    private editorTargetElement: HTMLElement | null = null;
     private dragState?: OutlineDragState;
     private suppressClick = false;
 
@@ -181,10 +182,7 @@ export class HeadingOutlineDockView {
         this.body.addEventListener("click", this.onClick);
         this.body.addEventListener("contextmenu", this.onContextMenu);
         this.body.addEventListener("mousedown", this.onOutlineMouseDown);
-        document.addEventListener("pointerover", this.onEditorInteraction);
-        document.addEventListener("click", this.onEditorInteraction);
-        document.addEventListener("focusin", this.onEditorInteraction);
-        window.addEventListener("scroll", this.onScroll, true);
+        document.addEventListener("click", this.onEditorClick);
 
         this.observer = new MutationObserver(records => {
             if (records.some(record => this.settings.headingListDepth > 0 || record.type !== "characterData" ||
@@ -211,10 +209,15 @@ export class HeadingOutlineDockView {
             editors.find(item => item.element === this.editor?.element) ||
             editors.find(item => document.activeElement && item.element.contains(document.activeElement)) || editors[0] || null;
 
-        if (editor?.element === this.editor?.element && editor?.rootID === this.editor?.rootID &&
-            editor?.preview === this.editor?.preview && editor?.content === this.editor?.content) {
-            const movabilityChanged = editor?.disabled !== this.editor?.disabled ||
-                !!editor?.transaction !== !!this.editor?.transaction;
+        if (!editor && !this.editor) {
+            this.render();
+            return;
+        }
+
+        if (editor && this.editor && editor.element === this.editor.element && editor.rootID === this.editor.rootID &&
+            editor.preview === this.editor.preview && editor.content === this.editor.content) {
+            const movabilityChanged = editor.disabled !== this.editor.disabled ||
+                !!editor.transaction !== !!this.editor.transaction;
             // heartbeat 每次都会创建新的描述对象；原位同步可变状态，避免长拖动被误判为切换编辑器。
             this.editor.disabled = editor.disabled;
             this.editor.transaction = editor.transaction;
@@ -230,6 +233,7 @@ export class HeadingOutlineDockView {
         this.observer.disconnect();
         this.editor = editor;
         this.entries = [];
+        this.currentEntryId = "";
         this.collapsedEntryIds.clear();
         this.body.replaceChildren();
         this.body.removeAttribute("data-loading");
@@ -246,18 +250,12 @@ export class HeadingOutlineDockView {
         void this.refresh();
     }
 
-    private onEditorInteraction = (event: Event) => {
+    private onEditorClick = (event: MouseEvent) => {
         if (event.target instanceof HTMLElement && !this.rootElement.contains(event.target)) {
-            this.pointerElement = event.target;
+            this.editorTargetElement = event.target;
             this.syncEditors(event.target);
-            if (event.type === "click") this.highlight(true);
+            this.highlight(true, true);
         }
-    };
-
-    private onScroll = (event: Event) => {
-        if (event.target instanceof Node && this.rootElement.contains(event.target)) return;
-        this.pointerElement = null;
-        this.scheduleHighlight();
     };
 
     scheduleRefresh() {
@@ -666,9 +664,9 @@ export class HeadingOutlineDockView {
             return ids.has(id) && node.getClientRects().length > 0;
         });
 
-        const pointer = this.pointerElement;
-        if (pointer?.isConnected && this.editor.content.contains(pointer)) {
-            const directID = findClosestHeadingOutlineTargetId(pointer, this.editor.content, ids,
+        const target = this.editorTargetElement;
+        if (target?.isConnected && this.editor.content.contains(target)) {
+            const directID = findClosestHeadingOutlineTargetId(target, this.editor.content, ids,
                 this.editor.preview);
             if (directID) return directID;
 
@@ -676,8 +674,8 @@ export class HeadingOutlineDockView {
             let preceding = "";
             for (const node of nodes) {
                 const id = this.editor.preview ? node.id : node.dataset.nodeId!;
-                if (node.compareDocumentPosition(pointer) & Node.DOCUMENT_POSITION_FOLLOWING) preceding = id;
-                else if (node.compareDocumentPosition(pointer) & Node.DOCUMENT_POSITION_PRECEDING) break;
+                if (node.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING) preceding = id;
+                else if (node.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_PRECEDING) break;
             }
             if (preceding) return preceding;
         }
@@ -693,10 +691,14 @@ export class HeadingOutlineDockView {
         return current;
     }
 
-    highlight(autoScroll = false) {
+    highlight(autoScroll = false, resolveCurrent = false) {
         if (!this.editor || this.disposed) return;
         const ids = new Set(this.entries.map(entry => entry.id));
-        const current = this.resolveCurrentID(ids);
+        let current = ids.has(this.currentEntryId) ? this.currentEntryId : "";
+        if (resolveCurrent || !current) {
+            current = this.resolveCurrentID(ids);
+            this.currentEntryId = current;
+        }
         let currentRow: HTMLElement | null = null;
         this.body.querySelectorAll<HTMLElement>("button[data-id]").forEach(row => {
             const active = !!current && row.dataset.id === current;
@@ -720,10 +722,7 @@ export class HeadingOutlineDockView {
         this.observer.disconnect();
         this.cancelOutlineDrag();
         this.body.removeEventListener("mousedown", this.onOutlineMouseDown);
-        document.removeEventListener("pointerover", this.onEditorInteraction);
-        document.removeEventListener("click", this.onEditorInteraction);
-        document.removeEventListener("focusin", this.onEditorInteraction);
-        window.removeEventListener("scroll", this.onScroll, true);
+        document.removeEventListener("click", this.onEditorClick);
         this.rootElement.remove();
         this.editor = null;
     }
