@@ -115,6 +115,7 @@ export function includeListsInHeadingTree(headings: HeadingEntry[], dom: string,
     const listItems = new Map<string, HeadingEntry>();
     const entries: HeadingEntry[] = [];
     const seen = new Set<string>();
+    const seenParagraphs = new Set<string>();
     const rootContainers = new Set(findRootLists(document.body));
     let headingDepth = 0;
     const selector = `[data-type="NodeHeading"], ${PARAGRAPH_SELECTOR}, ${OUTLINE_CONTAINER_SELECTOR}, ${OUTLINE_ITEM_SELECTOR}`;
@@ -128,16 +129,30 @@ export function includeListsInHeadingTree(headings: HeadingEntry[], dom: string,
         } else if (node.matches(OUTLINE_CONTAINER_SELECTOR) && rootContainers.has(node) &&
             (!node.closest('[data-type="NodeBlockQueryEmbed"]') || node.closest(EMBED_RESULT_SELECTOR))) {
             const depth = blockDepth(node.getAttribute(DEPTH_ATTRIBUTE)) ?? defaultDepth;
-            const embedId = node.closest<HTMLElement>(EMBED_SELECTOR)?.dataset.nodeId;
-            const paragraph = node.previousElementSibling?.matches(PARAGRAPH_SELECTOR)
+            const embed = node.closest<HTMLElement>(EMBED_SELECTOR);
+            const embedId = embed?.dataset.nodeId;
+            const directParagraph = node.previousElementSibling?.matches(PARAGRAPH_SELECTOR)
                 ? node.previousElementSibling as HTMLElement : null;
-            if (paragraph) {
-                entries.push({ id: paragraph.dataset.nodeId!, text: extractParagraphText(paragraph),
-                    depth: headingDepth + 1, level: 0, kind: "paragraph",
-                    ...(embedId ? { embedId } : {}) });
+            const embedParagraph = !directParagraph && node.closest(EMBED_RESULT_SELECTOR) &&
+                embed?.previousElementSibling?.matches(PARAGRAPH_SELECTOR)
+                ? embed.previousElementSibling as HTMLElement : null;
+            const paragraphOwner = embedParagraph?.parentElement?.closest<HTMLElement>(OUTLINE_ITEM_SELECTOR);
+            const ownerEntry = listItems.get(paragraphOwner?.dataset.nodeId || "");
+            const baseDepth = ownerEntry?.depth ?? headingDepth;
+            // 嵌入结果以独立根列表提取；此时父段落位于查询嵌入块之前，而不是列表结果内部。
+            // 若嵌入块本身位于普通列表项正文中，则不重复加入该列表项的正文段落。
+            const paragraph = embedParagraph && paragraphOwner?.matches('[data-type="NodeListItem"]')
+                ? null : directParagraph || embedParagraph;
+            const paragraphId = paragraph?.dataset.nodeId || "";
+            const paragraphEmbedId = paragraph?.closest<HTMLElement>(EMBED_SELECTOR)?.dataset.nodeId;
+            if (paragraph && !seenParagraphs.has(paragraphId)) {
+                seenParagraphs.add(paragraphId);
+                entries.push({ id: paragraphId, text: extractParagraphText(paragraph),
+                    depth: baseDepth + 1, level: 0, kind: "paragraph",
+                    ...(paragraphEmbedId ? { embedId: paragraphEmbedId } : {}) });
             }
             for (const entry of extractOutline(node, depth)) {
-                listItems.set(entry.id, { ...entry, depth: headingDepth + entry.depth + (paragraph ? 1 : 0), level: 0,
+                listItems.set(entry.id, { ...entry, depth: baseDepth + entry.depth + (paragraph ? 1 : 0), level: 0,
                     kind: entry.kind === "tab" ? "tab" : "list", ...(embedId ? { embedId } : {}) });
             }
         } else if (node.matches(PARAGRAPH_SELECTOR)) {

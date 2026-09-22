@@ -130,6 +130,29 @@ test("大纲增强把当前编辑器已渲染的嵌入列表合并到文档快�
     } finally { env.cleanup(); }
 });
 
+test("嵌入块渲染列表时，将嵌入块前的段落作为父级且只添加一次", () => {
+    const env = setup();
+    try {
+        const parent = '<div data-type="NodeParagraph" data-node-id="embed-list-parent">' +
+            '<div contenteditable="true"><strong>整体计划与行动</strong></div></div>';
+        const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' + tabsRoot("tabs",
+            tabDOM("tab-one", "20260922 Tue", parent + embedBlock("embed-one")));
+        env.editors[0].content.innerHTML = snapshot.replace(embedBlock("embed-one"), embedBlock("embed-one",
+            embedResult(listRoot(listDOM("embedded-one", "嵌入列表一"))) +
+            embedResult(listRoot(listDOM("embedded-two", "嵌入列表二")))));
+
+        const entries = includeListsInHeadingTree(flattenHeadingTree(tree).slice(0, 1), snapshot, 2,
+            env.editors[0].content);
+        assert.deepEqual(entries.map(({ id, text, depth, kind, embedId }) => ({ id, text, depth, kind, embedId })), [
+            { id: "h1", text: "1. 一级标题", depth: 1, kind: undefined, embedId: undefined },
+            { id: "tab-one", text: "20260922 Tue", depth: 2, kind: "tab", embedId: undefined },
+            { id: "embed-list-parent", text: "整体计划与行动", depth: 3, kind: "paragraph", embedId: undefined },
+            { id: "embedded-one", text: "嵌入列表一", depth: 4, kind: "list", embedId: "embed-one" },
+            { id: "embedded-two", text: "嵌入列表二", depth: 4, kind: "list", embedId: "embed-one" },
+        ]);
+    } finally { env.cleanup(); }
+});
+
 test("悬浮大纲增强点击嵌入列表项定位当前渲染副本，且不提供插入菜单", async () => {
     const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' + embedBlock("embed-one");
     const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree);
