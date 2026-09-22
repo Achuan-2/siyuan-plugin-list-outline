@@ -4,6 +4,7 @@ import { JSDOM } from "jsdom";
 import { normalizeSettings } from "../src/defaultSettings";
 import { HeadingOutlineDockView } from "../src/headingDock";
 import type { HeadingEditor } from "../src/headingOutline";
+import { createHeadingMovePlan } from "../src/headingDrag";
 
 const tree = [{ id: "h1", name: "<strong>一级标题</strong>", subType: "h1", number: "1.", blocks: [
     { id: "h3", name: "", content: "三级标题", subType: "h3", children: [{ id: "h6", name: "自定义块名", content: "六级标题", subType: "h6" }] },
@@ -21,9 +22,17 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     win.HTMLElement.prototype.getClientRects = function () { return [this.getBoundingClientRect()] as any; };
     win.HTMLElement.prototype.getBoundingClientRect = () => ({ x: 40, y: 40, left: 40, right: 800, top: 40, bottom: 600, width: 760, height: 560, toJSON() {} });
 
-    const editors: HeadingEditor[] = [{ element: win.document.querySelector('.protyle')!, content: win.document.querySelector('.protyle-wysiwyg')!, rootID: "doc1", notebook: "notebook1", preview: false }];
     const calls: { url: string; data: Record<string, unknown> }[] = [];
     const navigations: { id: string; folded: boolean }[] = [];
+    const transactions: any[] = [];
+    const editors: HeadingEditor[] = [{
+        element: win.document.querySelector('.protyle')!,
+        content: win.document.querySelector('.protyle-wysiwyg')!,
+        rootID: "doc1",
+        notebook: "notebook1",
+        preview: false,
+        transaction: (operations, undoOperations) => transactions.push({ operations, undoOperations }),
+    }];
     const menus: any[] = [];
     const levelMenus: { currentLevel: number; selectLevel(level: number): void }[] = [];
     let settings = normalizeSettings({ enableHeadingDock: true });
@@ -47,7 +56,7 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     });
 
     return {
-        win, editors, calls, navigations, menus, levelMenus, dock, container,
+        win, editors, calls, navigations, transactions, menus, levelMenus, dock, container,
         setSettings: (value: Parameters<typeof normalizeSettings>[0]) => {
             settings = normalizeSettings(value);
             dock.refreshSettings();
@@ -58,6 +67,58 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
         },
     };
 }
+
+test("标题拖动计划：支持同级排序、成为子标题并拒绝循环移动", () => {
+    const entries = [
+        { id: "h1", text: "一级", depth: 1, level: 1 },
+        { id: "h3", text: "三级", depth: 2, level: 3 },
+        { id: "h6", text: "六级", depth: 3, level: 6 },
+        { id: "h2", text: "二级", depth: 1, level: 2 },
+    ];
+    assert.deepEqual(createHeadingMovePlan(entries, "h2", "h1", "before"), {
+        operation: { action: "moveOutlineHeading", id: "h2" },
+        undoOperation: { action: "moveOutlineHeading", id: "h2", previousID: "h1" },
+    });
+    assert.deepEqual(createHeadingMovePlan(entries, "h2", "h3", "inside"), {
+        operation: { action: "moveOutlineHeading", id: "h2", previousID: "h6", parentID: "h3" },
+        undoOperation: { action: "moveOutlineHeading", id: "h2", previousID: "h1" },
+    });
+    assert.deepEqual(createHeadingMovePlan(entries, "h3", "h2", "after"), {
+        operation: { action: "moveOutlineHeading", id: "h3", previousID: "h2" },
+        undoOperation: { action: "moveOutlineHeading", id: "h3", parentID: "h1" },
+    });
+    assert.equal(createHeadingMovePlan(entries, "h1", "h3", "inside"), null);
+    assert.equal(createHeadingMovePlan(entries, "h6", "h3", "inside"), null);
+});
+
+test("大纲增强 Dock：拖到标题中部后提交成为子标题的可撤销事务", async () => {
+    const env = setup();
+    try {
+        await settle();
+        const source = env.container.querySelector<HTMLButtonElement>('button[data-id="h2"]')!;
+        const target = env.container.querySelector<HTMLButtonElement>('button[data-id="h3"]')!;
+        target.getBoundingClientRect = () => ({
+            x: 40, y: 100, left: 40, right: 300, top: 100, bottom: 128, width: 260, height: 28, toJSON() {},
+        });
+
+        source.dispatchEvent(new env.win.MouseEvent("mousedown", {
+            bubbles: true, button: 0, clientX: 60, clientY: 50,
+        }));
+        target.dispatchEvent(new env.win.MouseEvent("mousemove", {
+            bubbles: true, clientX: 80, clientY: 114,
+        }));
+        assert.equal(target.classList.contains("dragover"), true);
+        env.win.document.dispatchEvent(new env.win.MouseEvent("mouseup", { bubbles: true }));
+
+        assert.deepEqual(env.transactions, [{
+            operations: [{ action: "moveOutlineHeading", id: "h2", previousID: "h6", parentID: "h3" }],
+            undoOperations: [{ action: "moveOutlineHeading", id: "h2", previousID: "h1" }],
+        }]);
+        assert.equal(env.container.querySelector(".heading-outline-dock__body")?.getAttribute("data-loading"), "true");
+        source.click();
+        assert.equal(env.navigations.length, 0);
+    } finally { env.cleanup(); }
+});
 
 test("大纲增强 Dock：关闭设置时不再显示禁用提示", async () => {
     const env = setup();
@@ -255,7 +316,7 @@ test("大纲增强 Dock：支持分别折叠段落和列表项的子项", async 
     } finally { env.cleanup(); }
 });
 
-test("大纲增强 Dock：鼠标移入不定位，点击标题或段落才定位高亮", async () => {
+test("大纲增强 Dock：鼠标移入只更新高亮，点击时才滚动到对应条目", async () => {
     const env = setup();
     try {
         await settle();
@@ -274,7 +335,7 @@ test("大纲增强 Dock：鼠标移入不定位，点击标题或段落才定位
         env.container.querySelector<HTMLElement>('button[data-id="h3"]')!.scrollIntoView = () => { scrolled = true; };
         h3El.firstElementChild!.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
         env.dock.syncEditors();
-        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h1");
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
         assert.equal(scrolled, false);
         h3El.firstElementChild!.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
@@ -286,9 +347,33 @@ test("大纲增强 Dock：鼠标移入不定位，点击标题或段落才定位
         env.editors[0].content.append(paragraph);
         h1El.click();
         paragraph.firstElementChild!.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
-        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h1");
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
         paragraph.firstElementChild!.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "h3");
+    } finally { env.cleanup(); }
+});
+
+test("大纲增强 Dock：鼠标位于空列表项时直接高亮空列表项", async () => {
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        '<div data-type="NodeList" data-node-id="list">' +
+        '<div data-type="NodeListItem" data-node-id="filled"><div data-type="NodeParagraph" data-node-id="filled-p">' +
+        '<div contenteditable="true">已有内容</div></div></div>' +
+        '<div data-type="NodeListItem" data-node-id="empty"><div data-type="NodeParagraph" data-node-id="empty-p">' +
+        '<div contenteditable="true"><br></div></div></div></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree.slice(0, 1));
+    try {
+        env.editors[0].content.innerHTML = snapshot;
+        env.setSettings({ enableHeadingDock: true, headingListDepth: 1 });
+        await new Promise(resolve => setTimeout(resolve, 680));
+        const emptyContent = env.editors[0].content.querySelector<HTMLElement>(
+            '[data-node-id="empty"] [contenteditable="true"]'
+        )!;
+
+        emptyContent.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+
+        const current = env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus");
+        assert.equal(current?.dataset.id, "empty");
+        assert.equal(current?.textContent, "（空列表项）");
     } finally { env.cleanup(); }
 });
 
@@ -358,7 +443,7 @@ test("大纲增强 Dock：列表下拉框选择不显示或具体显示层级", 
         env.editors[0].content.innerHTML = snapshot;
         const listContent = env.editors[0].content.querySelector('[data-node-id="l1"] [contenteditable]')!;
         listContent.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
-        assert.notEqual(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "l1");
+        assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "l1");
         listContent.dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
         assert.equal(env.container.querySelector<HTMLButtonElement>("button.b3-list-item--focus")?.dataset.id, "l1");
 

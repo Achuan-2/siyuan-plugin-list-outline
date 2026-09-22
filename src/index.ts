@@ -142,7 +142,8 @@ export default class ListOutlinePlugin extends Plugin {
         const content = preview ? protyle.preview.element : protyle.wysiwyg?.element;
         if (!content) return [];
         return [{ element: protyle.element, content, rootID: protyle.block.rootID,
-            notebook: protyle.notebookId, preview }];
+            notebook: protyle.notebookId, preview, disabled: protyle.disabled,
+            transaction: editor.transaction.bind(editor) }];
     });
 
     private syncFeatures() {
