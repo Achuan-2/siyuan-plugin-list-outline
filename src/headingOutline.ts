@@ -36,6 +36,7 @@ export class HeadingOutlineController {
     private editor: HeadingEditor | null = null;
     private entries: HeadingEntry[] = [];
     private collapsedEntryIds = new Set<string>();
+    private currentEntryId = "";
     private expanded = false;
     private menuOpen = false;
     private disposed = false;
@@ -155,7 +156,7 @@ export class HeadingOutlineController {
         document.addEventListener("click", this.onEditorPointer);
         document.addEventListener("keydown", this.onKeyDown);
         window.addEventListener("resize", this.schedulePosition);
-        window.addEventListener("scroll", this.schedulePosition, true);
+        window.addEventListener("scroll", this.onScroll, true);
         // 补充处理标签隐藏、分屏布局与编辑器 DOM 被替换，无需轮询接口。
         this.heartbeat = setInterval(() => this.syncEditors(), 500);
         this.syncEditors();
@@ -183,6 +184,7 @@ export class HeadingOutlineController {
         this.editor = editor;
         this.entries = [];
         this.collapsedEntryIds.clear();
+        this.currentEntryId = "";
         this.body.replaceChildren();
         this.status.textContent = "";
         this.setExpanded(false);
@@ -198,11 +200,7 @@ export class HeadingOutlineController {
         if (this.menuOpen) return;
         if (event.target instanceof HTMLElement && !this.panel.contains(event.target)) {
             this.syncEditors(event.target);
-            if ((event.type === "click" || event.type === "focusin") && this.editor?.content.contains(event.target)) {
-                const current = findClosestHeadingOutlineTargetId(event.target, this.editor.content,
-                    new Set(this.entries.map(entry => entry.id)), this.editor.preview);
-                if (current) setOutlineCurrent(this.body, current);
-            }
+            if (this.editor?.content.contains(event.target)) this.setCurrent(this.resolveEditorTarget(event.target));
         }
     };
 
@@ -400,7 +398,11 @@ export class HeadingOutlineController {
         }
         if (!expanded) this.body.scrollTop = 0;
         this.position();
-        if (expanded && !wasExpanded) this.scrollCurrentIntoView();
+        if (expanded && !wasExpanded) {
+            const current = this.resolveCurrentLocation();
+            if (current) this.setCurrent(current);
+            this.scrollCurrentIntoView();
+        }
     }
 
     private scrollCurrentIntoView() {
@@ -413,6 +415,13 @@ export class HeadingOutlineController {
             this.frame = 0;
             this.position();
         });
+    };
+
+    private onScroll = (event: Event) => {
+        // 定位当前项会滚动悬浮大纲自身；这种内部滚动不能反过来覆盖当前高亮。
+        if (event.target instanceof Node && this.panel.contains(event.target)) return;
+        this.currentEntryId = "";
+        this.schedulePosition();
     };
 
     private getMobileTop(viewport: Element, fallback: number) {
@@ -448,65 +457,73 @@ export class HeadingOutlineController {
             Object.assign(this.panel.style, { width: `${width}px`, left: `${right - width}px`,
                 top: `${top}px`, bottom: "auto", height: "auto", maxHeight: `${maxHeight}px` });
         }
-        this.highlight(top);
+        if (this.currentEntryId && this.entries.some(entry => entry.id === this.currentEntryId)) {
+            setOutlineCurrent(this.body, this.currentEntryId);
+        } else {
+            this.highlightFromViewport(top);
+        }
     }
 
-    locateCurrent(): string | null {
-        if (!this.editor || this.disposed) return null;
+    private resolveEditorTarget(target: Node): string {
+        if (!this.editor) return "";
+        const element = target instanceof Element ? target : target.parentElement;
+        if (!element || !this.editor.content.contains(element)) return "";
         const ids = new Set(this.entries.map(entry => entry.id));
-        if (!ids.size) return null;
+        const direct = findClosestHeadingOutlineTargetId(element, this.editor.content, ids, this.editor.preview);
+        if (direct) return direct;
 
-        let targetId = "";
+        // 普通正文块没有自己的大纲项时，沿用阅读位置语义，高亮它上方最近的大纲项。
+        let preceding = "";
+        const nodes = this.editor.content.querySelectorAll<HTMLElement>(
+            getHeadingOutlineTargetSelector(this.editor.preview));
+        for (const node of Array.from(nodes)) {
+            const id = this.editor.preview ? node.id : node.dataset.nodeId!;
+            if (!ids.has(id) || !node.getClientRects().length) continue;
+            if (node.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) preceding = id;
+            else if (node.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_PRECEDING) break;
+        }
+        return preceding;
+    }
+
+    private setCurrent(id: string) {
+        this.currentEntryId = id && this.entries.some(entry => entry.id === id) ? id : "";
+        setOutlineCurrent(this.body, this.currentEntryId);
+    }
+
+    private resolveCurrentLocation(): string {
+        if (!this.editor || this.disposed) return "";
+        const ids = new Set(this.entries.map(entry => entry.id));
+        if (!ids.size) return "";
 
         // 优先检查光标所在位置或获得焦点的元素
         const selection = document.getSelection();
         const focusNode = selection?.focusNode || document.activeElement;
         if (focusNode && this.editor.content.contains(focusNode instanceof Node ? focusNode : null)) {
-            const focusElement = focusNode instanceof Element ? focusNode : focusNode.parentElement;
-            if (focusElement) {
-                const selector = getHeadingOutlineTargetSelector(this.editor.preview);
-                // 1. 如果光标直接在标题、列表项、页签或作为列表父级的大纲段落上
-                const blockId = findClosestHeadingOutlineTargetId(focusElement, this.editor.content, ids,
-                    this.editor.preview);
-                if (blockId) {
-                    targetId = blockId;
-                } else {
-                    // 2. 如果光标在普通段落或子块中，查找该块上方最近的标题
-                    const cursorTop = focusElement.getBoundingClientRect().top;
-                    const headings = Array.from(this.editor.content.querySelectorAll<HTMLElement>(selector)).filter(h => {
-                        const id = this.editor!.preview ? h.id : h.dataset.nodeId!;
-                        return ids.has(id) && h.getClientRects().length > 0;
-                    });
-                    for (const heading of headings) {
-                        if (heading.getBoundingClientRect().top <= cursorTop + 10) {
-                            targetId = this.editor.preview ? heading.id : heading.dataset.nodeId!;
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
+            const targetId = this.resolveEditorTarget(focusNode);
+            if (targetId) return targetId;
         }
 
         // 如果光标不在编辑器内，回退到当前视口可见区域最顶部的标题
-        if (!targetId) {
-            const viewport = this.editor.content.closest(".protyle-content") || this.editor.content;
-            const top = viewport.getBoundingClientRect().top;
-            const selector = getHeadingOutlineTargetSelector(this.editor.preview);
-            const headings = Array.from(this.editor.content.querySelectorAll<HTMLElement>(selector)).filter(h => {
-                const id = this.editor!.preview ? h.id : h.dataset.nodeId!;
-                return ids.has(id) && h.getClientRects().length > 0;
-            });
-            for (const heading of headings) {
-                const id = this.editor.preview ? heading.id : heading.dataset.nodeId!;
-                if (!targetId) targetId = id;
-                if (heading.getBoundingClientRect().top <= top + 36) targetId = id;
-            }
+        const viewport = this.editor.content.closest(".protyle-content") || this.editor.content;
+        const top = viewport.getBoundingClientRect().top;
+        let targetId = "";
+        const headings = this.editor.content.querySelectorAll<HTMLElement>(
+            getHeadingOutlineTargetSelector(this.editor.preview));
+        for (const heading of Array.from(headings)) {
+            const id = this.editor.preview ? heading.id : heading.dataset.nodeId!;
+            if (!ids.has(id) || !heading.getClientRects().length) continue;
+            if (!targetId) targetId = id;
+            if (heading.getBoundingClientRect().top <= top + 36) targetId = id;
         }
+        return targetId;
+    }
+
+    locateCurrent(): string | null {
+        const targetId = this.resolveCurrentLocation();
 
         if (!targetId) return null;
 
-        setOutlineCurrent(this.body, targetId);
+        this.setCurrent(targetId);
         const targetRow = this.body.querySelector<HTMLElement>(`button[data-id="${targetId}"]`);
         if (targetRow) {
             targetRow.scrollIntoView?.({ block: "center", behavior: "smooth" });
@@ -520,7 +537,7 @@ export class HeadingOutlineController {
         return targetId;
     }
 
-    private highlight(top: number) {
+    private highlightFromViewport(top: number) {
         if (!this.editor) return;
         const ids = new Set(this.entries.map(entry => entry.id));
         let current = "";
@@ -532,7 +549,7 @@ export class HeadingOutlineController {
             if (!current) current = id;
             if (heading.getBoundingClientRect().top <= top + 36) current = id;
         }
-        setOutlineCurrent(this.body, current);
+        this.setCurrent(current);
     }
 
     destroy() {
@@ -549,7 +566,7 @@ export class HeadingOutlineController {
         document.removeEventListener("click", this.onDocumentClick);
         document.removeEventListener("keydown", this.onKeyDown);
         window.removeEventListener("resize", this.schedulePosition);
-        window.removeEventListener("scroll", this.schedulePosition, true);
+        window.removeEventListener("scroll", this.onScroll, true);
         this.panel.remove();
         this.editor = null;
     }

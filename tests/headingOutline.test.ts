@@ -396,6 +396,50 @@ test("使用文档 ID 请求完整大纲，悬停展开，折叠标题使用原�
     } finally { env.cleanup(); }
 });
 
+test("悬浮大纲增强跟随鼠标所在块高亮，定位当前块后同步不会回跳", async () => {
+    const env = setup();
+    try {
+        await settle();
+        env.editors[0].content.innerHTML = [
+            '<div data-type="NodeHeading" data-node-id="h1"><div contenteditable="true">一级标题</div></div>',
+            '<div data-type="NodeHeading" data-node-id="h3"><div contenteditable="true">三级标题</div></div>',
+            '<div data-type="NodeHeading" data-node-id="h6"><div contenteditable="true">六级标题</div></div>',
+            '<div data-type="NodeHeading" data-node-id="h2"><div contenteditable="true">第二章</div></div>',
+        ].join("");
+        const h3 = env.editors[0].content.querySelector<HTMLElement>('[data-node-id="h3"] [contenteditable="true"]')!;
+        h3.dispatchEvent(new env.win.MouseEvent("pointerover", { bubbles: true }));
+        assert.equal(env.panel.querySelector(".list-outline-floating__current")?.getAttribute("data-id"), "h3");
+        env.controller.syncEditors();
+        assert.equal(env.panel.querySelector(".list-outline-floating__current")?.getAttribute("data-id"), "h3");
+
+        const h6 = env.editors[0].content.querySelector<HTMLElement>('[data-node-id="h6"] [contenteditable="true"]')!;
+        const selection = env.win.document.getSelection()!;
+        const range = env.win.document.createRange();
+        range.selectNodeContents(h6);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        let autoScrolledId = "";
+        env.panel.querySelectorAll<HTMLElement>("button[data-id]").forEach(row => {
+            row.scrollIntoView = () => { autoScrolledId = row.dataset.id || ""; };
+        });
+        env.panel.dispatchEvent(new env.win.MouseEvent("pointerenter"));
+        assert.equal(env.panel.querySelector(".list-outline-floating__current")?.getAttribute("data-id"), "h6");
+        assert.equal(autoScrolledId, "h6");
+
+        const h3Range = env.win.document.createRange();
+        h3Range.selectNodeContents(h3);
+        h3Range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(h3Range);
+        env.panel.querySelector<HTMLButtonElement>('button[aria-label="定位当前位置"]')!.click();
+        assert.equal(env.panel.querySelector(".list-outline-floating__current")?.getAttribute("data-id"), "h3");
+        env.controller.syncEditors();
+        assert.equal(env.panel.querySelector(".list-outline-floating__current")?.getAttribute("data-id"), "h3");
+    } finally { env.cleanup(); }
+});
+
 test("电脑端悬浮大纲增强支持在线切换省略列表型与图标型", async () => {
     const env = setup();
     try {
