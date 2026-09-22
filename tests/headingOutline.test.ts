@@ -19,13 +19,16 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     Object.assign(globalThis, { requestAnimationFrame: win.requestAnimationFrame.bind(win), cancelAnimationFrame: win.cancelAnimationFrame.bind(win) });
     win.HTMLElement.prototype.getClientRects = function () { return [this.getBoundingClientRect()] as any; };
     win.HTMLElement.prototype.getBoundingClientRect = () => ({ x: 40, y: 40, left: 40, right: 800, top: 40, bottom: 600, width: 760, height: 560, toJSON() {} });
-    const editors: HeadingEditor[] = [{ element: win.document.querySelector('.protyle')!, content: win.document.querySelector('.protyle-wysiwyg')!, rootID: "doc1", notebook: "notebook1", preview: false }];
+    const transactions: any[] = [];
+    const editors: HeadingEditor[] = [{ element: win.document.querySelector('.protyle')!, content: win.document.querySelector('.protyle-wysiwyg')!, rootID: "doc1", notebook: "notebook1", preview: false,
+        transaction: (operations, undoOperations) => transactions.push({ operations, undoOperations }) }];
     const calls: { url: string; data: Record<string, unknown> }[] = [];
     const navigations: { id: string; folded: boolean }[] = [];
     const menus: any[] = [];
     let settings = normalizeSettings();
     const controller = new HeadingOutlineController({ getEditors: () => editors,
         isMobile: () => mobile,
+        newNodeID: () => "new-child-list",
         getSettings: () => settings,
         setListDepth: async depth => { settings = { ...settings, headingListDepth: depth }; },
         request: async (url, data) => { calls.push({ url, data }); return request ? request(url, data) : url.endsWith("checkBlockFold") ? { isFolded: true } : tree; },
@@ -33,7 +36,7 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
         openInsertMenu: (event, target) => { event.preventDefault(); menus.push(target); },
     });
     const panel = win.document.querySelector<HTMLElement>('.heading-outline-floating')!;
-    return { win, editors, calls, navigations, menus, controller, panel,
+    return { win, editors, calls, navigations, transactions, menus, controller, panel,
         setSettings: (value: Parameters<typeof normalizeSettings>[0]) => { settings = normalizeSettings(value); controller.refreshSettings(); },
         cleanup: () => { controller.destroy(); win.close(); } };
 }
@@ -298,6 +301,79 @@ test("大纲增强右键传递对应标题与文档上下文", async () => {
         assert.equal(env.menus[0].id, "h3");
         assert.equal(env.menus[0].kind, "heading");
         assert.equal(env.menus[0].notebook, "notebook1");
+    } finally { env.cleanup(); }
+});
+
+test("悬浮大纲增强拖动标题后提交排序和层级事务，并抑制拖后的点击定位", async () => {
+    const env = setup();
+    try {
+        await settle();
+        const source = env.panel.querySelector<HTMLButtonElement>('button[data-id="h2"]')!;
+        const target = env.panel.querySelector<HTMLButtonElement>('button[data-id="h3"]')!;
+        assert.equal(source.dataset.draggableOutline, "heading");
+        target.getBoundingClientRect = () => ({
+            x: 40, y: 100, left: 40, right: 300, top: 100, bottom: 128, width: 260, height: 28, toJSON() {},
+        });
+
+        source.dispatchEvent(new env.win.MouseEvent("mousedown", {
+            bubbles: true, button: 0, clientX: 60, clientY: 50,
+        }));
+        target.dispatchEvent(new env.win.MouseEvent("mousemove", {
+            bubbles: true, clientX: 80, clientY: 114,
+        }));
+        assert.equal(target.classList.contains("dragover"), true);
+        env.win.document.dispatchEvent(new env.win.MouseEvent("mouseup", { bubbles: true }));
+
+        assert.deepEqual(env.transactions, [{
+            operations: [{ action: "moveOutlineHeading", id: "h2", previousID: "h6", parentID: "h3" }],
+            undoOperations: [{ action: "moveOutlineHeading", id: "h2", previousID: "h1" }],
+        }]);
+        assert.equal(env.panel.querySelector(".list-outline-floating__body")?.getAttribute("data-loading"), "true");
+        source.click();
+        assert.equal(env.navigations.length, 0);
+    } finally { env.cleanup(); }
+});
+
+test("悬浮大纲增强拖动列表项后提交可撤销的缩进事务", async () => {
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        '<div class="list" data-type="NodeList" data-subtype="u" data-node-id="root-list">' +
+        '<div data-type="NodeListItem" data-node-id="one"><div data-type="NodeParagraph"><div contenteditable="true">第一项</div></div></div>' +
+        '<div data-type="NodeListItem" data-node-id="two"><div data-type="NodeParagraph"><div contenteditable="true">第二项</div></div></div>' +
+        '<div class="protyle-attr"></div></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree.slice(0, 1));
+    try {
+        env.editors[0].content.innerHTML = snapshot;
+        env.setSettings({ headingListDepth: 2 });
+        await new Promise(resolve => setTimeout(resolve, 680));
+        const source = env.panel.querySelector<HTMLButtonElement>('button[data-id="two"]')!;
+        const target = env.panel.querySelector<HTMLButtonElement>('button[data-id="one"]')!;
+        const originalRootHTML = env.editors[0].content.querySelector('[data-node-id="root-list"]')!.outerHTML;
+        assert.equal(source.dataset.draggableOutline, "list");
+        target.getBoundingClientRect = () => ({
+            x: 40, y: 100, left: 40, right: 300, top: 100, bottom: 128, width: 260, height: 28, toJSON() {},
+        });
+
+        source.dispatchEvent(new env.win.MouseEvent("mousedown", {
+            bubbles: true, button: 0, clientX: 60, clientY: 50,
+        }));
+        target.dispatchEvent(new env.win.MouseEvent("mousemove", {
+            bubbles: true, clientX: 80, clientY: 114,
+        }));
+        env.win.document.dispatchEvent(new env.win.MouseEvent("mouseup", { bubbles: true }));
+
+        assert.equal(env.transactions.length, 1);
+        assert.equal(env.transactions[0].operations[0].action, "update");
+        assert.equal(env.transactions[0].operations[0].id, "root-list");
+        const updated = new env.win.DOMParser().parseFromString(
+            env.transactions[0].operations[0].data, "text/html"
+        );
+        const nested = updated.querySelector('[data-node-id="one"] > [data-type="NodeList"]')!;
+        assert.equal((nested as HTMLElement).dataset.nodeId, "new-child-list");
+        assert.equal(nested.querySelector('[data-node-id="two"]') !== null, true);
+        assert.equal(env.transactions[0].undoOperations[0].data, originalRootHTML);
+        assert.ok(env.editors[0].content.querySelector(
+            '[data-node-id="one"] > [data-node-id="new-child-list"] > [data-node-id="two"]'
+        ));
     } finally { env.cleanup(); }
 });
 

@@ -165,6 +165,29 @@
     &.list-outline-floating--expanded .heading-outline-floating__item {
         padding-inline-start: calc(var(--outline-indent) + 18px);
     }
+    &__item[data-draggable-outline] { cursor: grab; }
+    .list-outline-floating__body[data-dragging="true"] {
+        cursor: grabbing;
+        user-select: none;
+    }
+    &__drag-ghost {
+        position: fixed;
+        z-index: 999997;
+        pointer-events: none;
+        justify-content: flex-start;
+        min-height: 28px;
+        height: auto;
+        padding: 4px 10px;
+        padding-inline-start: calc(var(--outline-indent) + 18px);
+        color: var(--b3-theme-on-surface);
+        background: var(--b3-list-hover);
+        box-shadow: var(--b3-dialog-shadow);
+        opacity: 0.92;
+
+        .list-outline-floating__line { display: none; }
+        .list-outline-floating__text { display: block; }
+        .heading-outline-floating__icon { display: block; }
+    }
     &__fold {
         display: none;
         position: absolute;

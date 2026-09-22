@@ -172,6 +172,7 @@ export default class ListOutlinePlugin extends Plugin {
         if (this.settings.enableHeadingOutline && !this.headingOutline) this.headingOutline = new HeadingOutlineController({
             getEditors: this.getHeadingEditors,
             isMobile: () => getFrontend().includes("mobile"),
+            newNodeID: () => window.Lute.NewNodeID(),
             getSettings: () => this.settings,
             setListDepth: depth => this.saveSettings({ ...this.settings, headingListDepth: depth }),
             openInsertMenu: this.openInsertMenu,

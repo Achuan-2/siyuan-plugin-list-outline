@@ -183,6 +183,26 @@ export function canDragListItem(root: Element, id: string) {
 }
 
 /**
+ * 将列表 update 事务先同步到当前编辑器 DOM，避免等待后端回写期间大纲和正文短暂错位。
+ * 调用方可在事务提交失败时传入 undoOperations 原样回滚。
+ */
+export function applyListUpdateOperations(content: HTMLElement, operations: OutlineMoveOperation[]) {
+    const replacements = operations.flatMap(operation => {
+        if (operation.action !== "update") return [];
+        const current = Array.from(content.querySelectorAll<HTMLElement>(LIST_SELECTOR))
+            .find(list => list.dataset.nodeId === operation.id && !list.closest(EMBED_SELECTOR));
+        const template = content.ownerDocument.createElement("template");
+        template.innerHTML = operation.data.trim();
+        const replacement = template.content.firstElementChild;
+        if (!current || !(replacement instanceof HTMLElement)) {
+            throw new Error(`无法在当前编辑器中更新列表 ${operation.id}`);
+        }
+        return [{ current, replacement }];
+    });
+    replacements.forEach(({ current, replacement }) => current.replaceWith(replacement));
+}
+
+/**
  * 在 BlockDOM 副本中移动列表项，并生成可撤销的根列表 update 事务。
  * 同一根列表支持排序、缩进和取消缩进；不同根列表在源列表仍非空时也可移动。
  */

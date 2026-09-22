@@ -5,7 +5,8 @@ import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSe
 import { createOutlineFoldButton, createOutlineRow, setOutlineCurrent } from "./outlineView";
 import type { OpenInsertMenu } from "./outlineInsert";
 import { HEADING_OUTLINE_ICON_ID } from "./icons";
-import type { OutlineMoveOperation } from "./headingDrag";
+import { applyListUpdateOperations, canDragListItem, createHeadingMovePlan, createListItemMovePlan,
+    type HeadingDropPosition, type OutlineMoveOperation } from "./headingDrag";
 
 export interface HeadingEditor {
     element: HTMLElement;
@@ -26,6 +27,20 @@ interface Options {
     getSettings?(): OutlineSettings;
     setListDepth?(depth: number): Promise<unknown>;
     isMobile?(): boolean;
+    newNodeID?(): string;
+}
+
+interface OutlineDragState {
+    editor: HeadingEditor;
+    sourceKind: "heading" | "list";
+    sourceID: string;
+    sourceRow: HTMLButtonElement;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+    ghost?: HTMLElement;
+    targetID?: string;
+    position?: HeadingDropPosition;
 }
 
 const DESKTOP_FLOATING_RIGHT_GAP = 48;
@@ -48,6 +63,8 @@ export class HeadingOutlineController {
     private heartbeat: ReturnType<typeof setInterval>;
     private frame = 0;
     private readonly mobile: boolean;
+    private dragState?: OutlineDragState;
+    private suppressClick = false;
     private observer = new MutationObserver(records => {
         // 文本修改只关心标题；插入、删除和容器移动也可能改变标题树。
         if (records.some(record => this.settings.headingListDepth > 0 || record.type !== "characterData" ||
@@ -139,7 +156,7 @@ export class HeadingOutlineController {
         if (!this.mobile) {
             this.panel.addEventListener("pointerenter", () => this.setExpanded(true));
             this.panel.addEventListener("pointerleave", () => {
-                if (this.menuOpen) return;
+                if (this.menuOpen || this.dragState?.dragging) return;
                 this.setExpanded(false);
             });
         } else {
@@ -148,12 +165,13 @@ export class HeadingOutlineController {
         if (!this.mobile) {
             this.panel.addEventListener("focusin", () => this.setExpanded(true));
             this.panel.addEventListener("focusout", event => {
-                if (this.menuOpen) return;
+                if (this.menuOpen || this.dragState?.dragging) return;
                 if (!(event.relatedTarget instanceof Node && this.panel.contains(event.relatedTarget)) && !this.panel.matches(":hover")) this.setExpanded(false);
             });
         }
         this.body.addEventListener("click", this.onClick);
         this.body.addEventListener("contextmenu", this.onContextMenu);
+        this.body.addEventListener("mousedown", this.onOutlineMouseDown);
         document.addEventListener("pointerover", this.onEditorPointer);
         document.addEventListener("focusin", this.onEditorPointer);
         document.addEventListener("click", this.onEditorPointer);
@@ -178,6 +196,11 @@ export class HeadingOutlineController {
             editors.find(item => document.activeElement && item.element.contains(document.activeElement)) || editors[0] || null;
         if (editor?.element === this.editor?.element && editor?.rootID === this.editor?.rootID &&
             editor?.preview === this.editor?.preview && editor?.content === this.editor?.content) {
+            const movabilityChanged = editor.disabled !== this.editor.disabled ||
+                !!editor.transaction !== !!this.editor.transaction;
+            this.editor.disabled = editor.disabled;
+            this.editor.transaction = editor.transaction;
+            if (movabilityChanged) this.render();
             this.position();
             return;
         }
@@ -246,11 +269,13 @@ export class HeadingOutlineController {
             }
             this.status.textContent = "";
             this.render();
+            this.body.removeAttribute("data-loading");
         } catch (error) {
             if (this.disposed || version !== this.version) return;
             console.error("悬浮大纲增强：读取失败", error);
             this.status.textContent = "读取大纲增强失败，可点击刷新重试";
             this.render();
+            this.body.removeAttribute("data-loading");
         }
     }
 
@@ -290,6 +315,16 @@ export class HeadingOutlineController {
             const row = createOutlineRow(entry);
             row.classList.add("heading-outline-floating__item");
             if (entry.embedId) row.dataset.embedId = entry.embedId;
+            const sourceKind = !entry.kind || entry.kind === "heading" ? "heading" :
+                entry.kind === "list" && this.editor && canDragListItem(this.editor.content, entry.id) ? "list" : null;
+            const movable = !!sourceKind && !entry.embedId && !this.mobile && !this.editor?.preview &&
+                !this.editor?.disabled && !!this.editor?.transaction;
+            if (movable) {
+                row.dataset.draggableOutline = sourceKind;
+                if (!entry.images?.length || entry.images.some(image => image.title)) {
+                    row.title = `${entry.text}\n拖动可调整${sourceKind === "list" ? "列表项" : "标题"}顺序和层级`;
+                }
+            }
             const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             icon.classList.add("heading-outline-floating__icon");
             icon.setAttribute("aria-hidden", "true");
@@ -317,6 +352,12 @@ export class HeadingOutlineController {
     }
 
     private onClick = async (event: MouseEvent) => {
+        if (this.suppressClick) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.suppressClick = false;
+            return;
+        }
         const toggle = (event.target as Element).closest<HTMLButtonElement>("button[data-outline-toggle]");
         if (toggle) {
             event.preventDefault();
@@ -363,6 +404,158 @@ export class HeadingOutlineController {
             if (!this.disposed) this.options.reportError("大纲条目定位失败，请重试。");
         }
     };
+
+    private createOutlineMovePlan(
+        state: OutlineDragState,
+        targetID: string,
+        position: HeadingDropPosition,
+        preview = false,
+    ): { operations: OutlineMoveOperation[]; undoOperations: OutlineMoveOperation[] } | null {
+        if (state.sourceKind === "heading") {
+            const plan = createHeadingMovePlan(this.entries, state.sourceID, targetID, position);
+            return plan ? { operations: [plan.operation], undoOperations: [plan.undoOperation] } : null;
+        }
+        return createListItemMovePlan(state.editor.content, state.sourceID, targetID, position,
+            preview ? () => "drag-preview-list" : (this.options.newNodeID || (() => "")));
+    }
+
+    private onOutlineMouseDown = (event: MouseEvent) => {
+        if (event.button !== 0 || this.body.dataset.loading === "true") return;
+        const row = (event.target as Element).closest<HTMLButtonElement>("button[data-draggable-outline]");
+        const editor = this.editor;
+        if (!row?.dataset.id || !editor?.transaction || editor.disabled || editor.preview) return;
+        const sourceKind = row.dataset.draggableOutline;
+        if (sourceKind !== "heading" && sourceKind !== "list") return;
+        if ((event.target as Element).closest("button[data-outline-toggle]")) return;
+        this.cancelOutlineDrag();
+        this.dragState = {
+            editor,
+            sourceKind,
+            sourceID: row.dataset.id,
+            sourceRow: row,
+            startX: event.clientX,
+            startY: event.clientY,
+            dragging: false,
+        };
+        document.addEventListener("mousemove", this.onOutlineMouseMove);
+        document.addEventListener("mouseup", this.onOutlineMouseUp, { once: true });
+        window.addEventListener("blur", this.onOutlineDragBlur, { once: true });
+    };
+
+    private onOutlineMouseMove = (event: MouseEvent) => {
+        const state = this.dragState;
+        if (!state || this.editor !== state.editor || !state.sourceRow.isConnected) {
+            this.cancelOutlineDrag();
+            return;
+        }
+        if (!state.dragging && Math.abs(event.clientX - state.startX) < 3 &&
+            Math.abs(event.clientY - state.startY) < 3) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!state.dragging) {
+            state.dragging = true;
+            state.sourceRow.style.opacity = "0.38";
+            this.body.dataset.dragging = "true";
+            const ghost = state.sourceRow.cloneNode(true) as HTMLElement;
+            ghost.className = "list-outline-floating__item heading-outline-floating__item heading-outline-floating__drag-ghost";
+            ghost.removeAttribute("data-id");
+            ghost.removeAttribute("data-draggable-outline");
+            ghost.style.width = `${Math.max(160, state.sourceRow.getBoundingClientRect().width)}px`;
+            document.body.append(ghost);
+            state.ghost = ghost;
+        }
+        state.ghost!.style.left = `${event.clientX + 10}px`;
+        state.ghost!.style.top = `${event.clientY + 10}px`;
+        this.scrollDuringOutlineDrag(event.clientY);
+        this.clearOutlineDropIndicator();
+
+        const eventTarget = event.target instanceof Element ? event.target : null;
+        const target = eventTarget?.closest<HTMLButtonElement>(
+            `button[data-draggable-outline="${state.sourceKind}"]`
+        );
+        if (target === state.sourceRow) {
+            state.sourceRow.classList.add("dragover__current");
+            return;
+        }
+        if (!target || !this.body.contains(target) || !target.dataset.id) return;
+        const rect = target.getBoundingClientRect();
+        const edge = rect.height * 0.2;
+        const position: HeadingDropPosition = event.clientY < rect.top + edge ? "before" :
+            event.clientY > rect.bottom - edge ? "after" : "inside";
+        if (!this.createOutlineMovePlan(state, target.dataset.id, position, true)) {
+            target.classList.add("dragover__current");
+            return;
+        }
+        target.classList.add(position === "before" ? "dragover__top" :
+            position === "after" ? "dragover__bottom" : "dragover");
+        state.targetID = target.dataset.id;
+        state.position = position;
+    };
+
+    private onOutlineMouseUp = () => {
+        const state = this.dragState;
+        const plan = state?.dragging && state.targetID && state.position
+            ? this.createOutlineMovePlan(state, state.targetID, state.position)
+            : null;
+        const canCommit = !!plan && state?.editor === this.editor && state.editor.transaction;
+        if (state?.dragging) {
+            this.suppressClick = true;
+            setTimeout(() => { this.suppressClick = false; }, 0);
+        }
+        this.cancelOutlineDrag();
+        if (!canCommit || !state || !plan) return;
+        let transactionSubmitted = false;
+        try {
+            this.body.dataset.loading = "true";
+            if (state.sourceKind === "list") applyListUpdateOperations(state.editor.content, plan.operations);
+            state.editor.transaction!(plan.operations, plan.undoOperations);
+            transactionSubmitted = true;
+            state.editor.content.querySelectorAll<HTMLElement>(
+                '[data-type="NodeHeading"] [contenteditable="true"][spellcheck]'
+            ).forEach(heading => heading.setAttribute("contenteditable", "false"));
+            this.scheduleRefresh();
+        } catch (error) {
+            if (state.sourceKind === "list" && !transactionSubmitted) {
+                try { applyListUpdateOperations(state.editor.content, plan.undoOperations); }
+                catch (rollbackError) { console.error("悬浮大纲增强：恢复列表 DOM 失败", rollbackError); }
+            }
+            this.body.removeAttribute("data-loading");
+            console.error("悬浮大纲增强：移动大纲条目失败", error);
+            this.options.reportError("大纲条目移动失败，请重试。");
+        }
+    };
+
+    private onOutlineDragBlur = () => this.cancelOutlineDrag();
+
+    private scrollDuringOutlineDrag(clientY: number) {
+        const rect = this.body.getBoundingClientRect();
+        const edge = Math.min(36, rect.height / 4);
+        if (clientY < rect.top + edge) this.body.scrollTop -= 12;
+        else if (clientY > rect.bottom - edge) this.body.scrollTop += 12;
+    }
+
+    private clearOutlineDropIndicator() {
+        this.body.querySelectorAll(".dragover__top, .dragover__bottom, .dragover, .dragover__current").forEach(item => {
+            item.classList.remove("dragover__top", "dragover__bottom", "dragover", "dragover__current");
+        });
+        if (this.dragState) {
+            this.dragState.targetID = undefined;
+            this.dragState.position = undefined;
+        }
+    }
+
+    private cancelOutlineDrag() {
+        document.removeEventListener("mousemove", this.onOutlineMouseMove);
+        document.removeEventListener("mouseup", this.onOutlineMouseUp);
+        window.removeEventListener("blur", this.onOutlineDragBlur);
+        this.clearOutlineDropIndicator();
+        if (this.dragState) {
+            this.dragState.sourceRow.style.opacity = "";
+            this.dragState.ghost?.remove();
+        }
+        this.body.removeAttribute("data-dragging");
+        this.dragState = undefined;
+    }
 
     private onContextMenu = (event: MouseEvent) => {
         const row = (event.target as Element).closest<HTMLButtonElement>("button[data-id]");
@@ -563,6 +756,8 @@ export class HeadingOutlineController {
         clearInterval(this.heartbeat);
         cancelAnimationFrame(this.frame);
         this.observer.disconnect();
+        this.cancelOutlineDrag();
+        this.body.removeEventListener("mousedown", this.onOutlineMouseDown);
         document.removeEventListener("pointerover", this.onEditorPointer);
         document.removeEventListener("focusin", this.onEditorPointer);
         document.removeEventListener("click", this.onEditorPointer);

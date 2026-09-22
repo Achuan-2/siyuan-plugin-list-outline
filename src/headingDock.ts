@@ -5,7 +5,7 @@ import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSe
 import type { HeadingEditor } from "./headingOutline";
 import type { OpenInsertMenu } from "./outlineInsert";
 import { createOutlineFoldButton, createOutlineLabel } from "./outlineView";
-import { canDragListItem, createHeadingMovePlan, createListItemMovePlan,
+import { applyListUpdateOperations, canDragListItem, createHeadingMovePlan, createListItemMovePlan,
     type HeadingDropPosition, type OutlineMoveOperation } from "./headingDrag";
 
 export type OpenHeadingLevelMenu = (
@@ -475,24 +475,6 @@ export class HeadingOutlineDockView {
             preview ? () => "drag-preview-list" : (this.options.newNodeID || (() => "")));
     }
 
-    private applyListUpdates(content: HTMLElement, operations: OutlineMoveOperation[]) {
-        const replacements = operations.flatMap(operation => {
-            if (operation.action !== "update") return [];
-            const current = Array.from(content.querySelectorAll<HTMLElement>(
-                '[data-type="NodeList"][data-node-id]'
-            )).find(list => list.dataset.nodeId === operation.id &&
-                !list.closest('[data-type="NodeBlockQueryEmbed"]'));
-            const template = content.ownerDocument.createElement("template");
-            template.innerHTML = operation.data.trim();
-            const replacement = template.content.firstElementChild;
-            if (!current || !(replacement instanceof HTMLElement)) {
-                throw new Error(`无法在当前编辑器中更新列表 ${operation.id}`);
-            }
-            return [{ current, replacement }];
-        });
-        replacements.forEach(({ current, replacement }) => current.replaceWith(replacement));
-    }
-
     private onOutlineMouseDown = (event: MouseEvent) => {
         if (event.button !== 0 || this.searchQuery || this.body.dataset.loading === "true") return;
         const row = (event.target as Element).closest<HTMLButtonElement>("button[data-draggable-outline]");
@@ -581,7 +563,7 @@ export class HeadingOutlineDockView {
         let transactionSubmitted = false;
         try {
             this.body.dataset.loading = "true";
-            if (state.sourceKind === "list") this.applyListUpdates(state.editor.content, plan.operations);
+            if (state.sourceKind === "list") applyListUpdateOperations(state.editor.content, plan.operations);
             state.editor.transaction!(plan.operations, plan.undoOperations);
             transactionSubmitted = true;
             // 与思源原生大纲一致，避免事务回写期间标题编辑区仍保持可编辑状态。
@@ -591,7 +573,7 @@ export class HeadingOutlineDockView {
             this.scheduleRefresh();
         } catch (error) {
             if (state.sourceKind === "list" && !transactionSubmitted) {
-                try { this.applyListUpdates(state.editor.content, plan.undoOperations); }
+                try { applyListUpdateOperations(state.editor.content, plan.undoOperations); }
                 catch (rollbackError) { console.error("大纲增强 Dock：恢复列表 DOM 失败", rollbackError); }
             }
             this.body.removeAttribute("data-loading");
