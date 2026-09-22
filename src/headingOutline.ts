@@ -5,7 +5,7 @@ import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSe
 import { createOutlineFoldButton, createOutlineRow, setOutlineCurrent } from "./outlineView";
 import type { OpenInsertMenu } from "./outlineInsert";
 import { HEADING_OUTLINE_ICON_ID } from "./icons";
-import type { HeadingMoveOperation } from "./headingDrag";
+import type { OutlineMoveOperation } from "./headingDrag";
 
 export interface HeadingEditor {
     element: HTMLElement;
@@ -14,7 +14,7 @@ export interface HeadingEditor {
     notebook?: string;
     preview: boolean;
     disabled?: boolean;
-    transaction?(operations: HeadingMoveOperation[], undoOperations: HeadingMoveOperation[]): void;
+    transaction?(operations: OutlineMoveOperation[], undoOperations: OutlineMoveOperation[]): void;
 }
 
 interface Options {

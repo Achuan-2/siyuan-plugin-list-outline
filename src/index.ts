@@ -45,6 +45,7 @@ export default class ListOutlinePlugin extends Plugin {
                     openInsertMenu: this.openInsertMenu,
                     openHeadingLevelMenu: this.openHeadingLevelMenu,
                     isMobile: () => getFrontend().includes("mobile"),
+                    newNodeID: () => window.Lute.NewNodeID(),
                     request: this.request,
                     navigate: (id, folded) => {
                         const mobile = getFrontend().includes("mobile");

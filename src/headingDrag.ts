@@ -9,9 +9,22 @@ export interface HeadingMoveOperation {
     parentID?: string;
 }
 
+export interface ListUpdateOperation {
+    action: "update";
+    id: string;
+    data: string;
+}
+
+export type OutlineMoveOperation = HeadingMoveOperation | ListUpdateOperation;
+
 export interface HeadingMovePlan {
     operation: HeadingMoveOperation;
     undoOperation: HeadingMoveOperation;
+}
+
+export interface ListItemMovePlan {
+    operations: ListUpdateOperation[];
+    undoOperations: ListUpdateOperation[];
 }
 
 interface HeadingRelation {
@@ -97,5 +110,168 @@ export function createHeadingMovePlan(
             ...(source.previousID ? { previousID: source.previousID } : {}),
             ...(source.parentID ? { parentID: source.parentID } : {}),
         },
+    };
+}
+
+const LIST_SELECTOR = '[data-type="NodeList"][data-node-id]';
+const LIST_ITEM_SELECTOR = '[data-type="NodeListItem"][data-node-id]';
+const EMBED_SELECTOR = '[data-type="NodeBlockQueryEmbed"]';
+
+function findListItem(root: Element, id: string) {
+    return Array.from(root.querySelectorAll<HTMLElement>(LIST_ITEM_SELECTOR))
+        .find(item => item.dataset.nodeId === id && !item.closest(EMBED_SELECTOR));
+}
+
+function directListItems(list: Element) {
+    return Array.from(list.children).filter(child => child.matches(LIST_ITEM_SELECTOR)) as HTMLElement[];
+}
+
+function directChildLists(item: Element) {
+    return Array.from(item.children).filter(child => child.matches(LIST_SELECTOR)) as HTMLElement[];
+}
+
+function rootList(item: Element, root: Element) {
+    let list = item.parentElement?.closest<HTMLElement>(LIST_SELECTOR) || null;
+    let result = list;
+    while (list) {
+        const parent = list.parentElement?.closest<HTMLElement>(LIST_SELECTOR) || null;
+        if (!parent || !root.contains(parent)) break;
+        result = parent;
+        list = parent;
+    }
+    return result;
+}
+
+function previousListItem(item: Element) {
+    let previous = item.previousElementSibling;
+    while (previous && !previous.matches(LIST_ITEM_SELECTOR)) previous = previous.previousElementSibling;
+    return previous as HTMLElement | null;
+}
+
+function listSubtype(list: Element) {
+    const subtype = list.getAttribute("data-subtype") || "u";
+    return ["u", "o", "t"].includes(subtype) ? subtype : "u";
+}
+
+function insertBeforeAttributes(parent: Element, child: Element) {
+    const attributes = Array.from(parent.children)
+        .find(element => element.classList.contains("protyle-attr"));
+    if (attributes) attributes.before(child);
+    else parent.append(child);
+}
+
+function orderedListStart(list: Element) {
+    const marker = directListItems(list)[0]?.getAttribute("data-marker") || "1";
+    const start = Number.parseInt(marker, 10);
+    return Number.isFinite(start) ? start : 1;
+}
+
+function renumberOrderedList(list: Element, start = orderedListStart(list)) {
+    if (listSubtype(list) !== "o") return;
+    const items = directListItems(list);
+    items.forEach((item, index) => {
+        const marker = `${start + index}.`;
+        item.setAttribute("data-marker", marker);
+        const action = Array.from(item.children).find(child => child.classList.contains("protyle-action--order"));
+        if (action) action.textContent = marker;
+    });
+}
+
+/** 当前编辑器中存在的普通列表项才允许从 Dock 发起拖动。 */
+export function canDragListItem(root: Element, id: string) {
+    return !!findListItem(root, id);
+}
+
+/**
+ * 在 BlockDOM 副本中移动列表项，并生成可撤销的根列表 update 事务。
+ * 同一根列表支持排序、缩进和取消缩进；不同根列表在源列表仍非空时也可移动。
+ */
+export function createListItemMovePlan(
+    root: Element,
+    sourceID: string,
+    targetID: string,
+    position: HeadingDropPosition,
+    newNodeID: () => string,
+): ListItemMovePlan | null {
+    if (sourceID === targetID) return null;
+    const source = findListItem(root, sourceID);
+    const target = findListItem(root, targetID);
+    if (!source || !target || source.contains(target)) return null;
+    const sourceRoot = rootList(source, root);
+    const targetRoot = rootList(target, root);
+    if (!sourceRoot?.dataset.nodeId || !targetRoot?.dataset.nodeId) return null;
+
+    const sameRoot = sourceRoot === targetRoot;
+    const sourceRootClone = sourceRoot.cloneNode(true) as HTMLElement;
+    const targetRootClone = sameRoot ? sourceRootClone : targetRoot.cloneNode(true) as HTMLElement;
+    const sourceClone = findListItem(sourceRootClone, sourceID);
+    const targetClone = findListItem(targetRootClone, targetID);
+    if (!sourceClone || !targetClone) return null;
+    const sourceParent = sourceClone.parentElement;
+    const targetParent = targetClone.parentElement;
+    if (!sourceParent?.matches(LIST_SELECTOR) || !targetParent?.matches(LIST_SELECTOR)) return null;
+
+    const subtype = listSubtype(sourceParent);
+    const sourceStart = orderedListStart(sourceParent);
+    const targetStart = orderedListStart(targetParent);
+    let destination: HTMLElement = targetParent;
+    let destinationStart = targetStart;
+    if (position === "before" || position === "after") {
+        if (listSubtype(targetParent) !== subtype) return null;
+        if (sourceParent === targetParent &&
+            (position === "before" ? previousListItem(targetClone) === sourceClone :
+                previousListItem(sourceClone) === targetClone)) return null;
+        if (position === "before") targetClone.before(sourceClone);
+        else targetClone.after(sourceClone);
+    } else {
+        const childList = directChildLists(targetClone).find(list => listSubtype(list) === subtype);
+        if (childList) {
+            destination = childList;
+            destinationStart = orderedListStart(childList);
+        } else {
+            const listID = newNodeID();
+            if (!listID) return null;
+            destination = root.ownerDocument.createElement("div");
+            destination.className = "list";
+            destination.dataset.type = "NodeList";
+            destination.dataset.subtype = subtype;
+            destination.dataset.nodeId = listID;
+            const attributes = root.ownerDocument.createElement("div");
+            attributes.className = "protyle-attr";
+            attributes.setAttribute("contenteditable", "false");
+            attributes.textContent = "\u200b";
+            destination.append(attributes);
+            insertBeforeAttributes(targetClone, destination);
+            destinationStart = 1;
+        }
+        if (sourceParent === destination && directListItems(destination).at(-1) === sourceClone) {
+            return null;
+        }
+        insertBeforeAttributes(destination, sourceClone);
+    }
+
+    if (!directListItems(sourceParent).length) {
+        if (sourceParent === sourceRootClone) return null;
+        sourceParent.remove();
+    } else {
+        renumberOrderedList(sourceParent, sourceStart);
+    }
+    renumberOrderedList(destination, sourceParent === destination ? sourceStart : destinationStart);
+
+    if (sameRoot) {
+        return {
+            operations: [{ action: "update", id: sourceRoot.dataset.nodeId, data: sourceRootClone.outerHTML }],
+            undoOperations: [{ action: "update", id: sourceRoot.dataset.nodeId, data: sourceRoot.outerHTML }],
+        };
+    }
+    return {
+        operations: [
+            { action: "update", id: sourceRoot.dataset.nodeId, data: sourceRootClone.outerHTML },
+            { action: "update", id: targetRoot.dataset.nodeId, data: targetRootClone.outerHTML },
+        ],
+        undoOperations: [
+            { action: "update", id: targetRoot.dataset.nodeId, data: targetRoot.outerHTML },
+            { action: "update", id: sourceRoot.dataset.nodeId, data: sourceRoot.outerHTML },
+        ],
     };
 }

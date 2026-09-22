@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 import { normalizeSettings } from "../src/defaultSettings";
 import { HeadingOutlineDockView } from "../src/headingDock";
 import type { HeadingEditor } from "../src/headingOutline";
-import { createHeadingMovePlan } from "../src/headingDrag";
+import { createHeadingMovePlan, createListItemMovePlan } from "../src/headingDrag";
 
 const tree = [{ id: "h1", name: "<strong>一级标题</strong>", subType: "h1", number: "1.", blocks: [
     { id: "h3", name: "", content: "三级标题", subType: "h3", children: [{ id: "h6", name: "自定义块名", content: "六级标题", subType: "h6" }] },
@@ -53,6 +53,7 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
         openInsertMenu: (event, target) => { event.preventDefault(); menus.push(target); },
         openHeadingLevelMenu: (_target, currentLevel, selectLevel) => levelMenus.push({ currentLevel, selectLevel }),
         isMobile: () => mobile,
+        newNodeID: () => "new-child-list",
     });
 
     return {
@@ -91,6 +92,54 @@ test("标题拖动计划：支持同级排序、成为子标题并拒绝循环�
     assert.equal(createHeadingMovePlan(entries, "h6", "h3", "inside"), null);
 });
 
+test("列表项拖动计划：支持排序、缩进、取消缩进并拒绝循环移动", () => {
+    const dom = new JSDOM('<div class="protyle-wysiwyg"><div class="list" data-type="NodeList" data-subtype="u" data-node-id="root-list">' +
+        '<div data-type="NodeListItem" data-node-id="one"><div data-type="NodeParagraph">第一项</div>' +
+        '<div class="list" data-type="NodeList" data-subtype="u" data-node-id="child-list">' +
+        '<div data-type="NodeListItem" data-node-id="child-one"><div data-type="NodeParagraph">子项</div></div>' +
+        '<div class="protyle-attr"></div></div></div>' +
+        '<div data-type="NodeListItem" data-node-id="two"><div data-type="NodeParagraph">第二项</div></div>' +
+        '<div data-type="NodeListItem" data-node-id="three"><div data-type="NodeParagraph">第三项</div></div>' +
+        '<div class="protyle-attr"></div></div></div>');
+    const root = dom.window.document.querySelector(".protyle-wysiwyg")!;
+    const directItemIDs = (list: Element) => Array.from(list.children)
+        .filter(child => child.matches('[data-type="NodeListItem"]'))
+        .map(item => (item as HTMLElement).dataset.nodeId);
+    const updatedRoot = (data: string) => new dom.window.DOMParser().parseFromString(data, "text/html")
+        .body.firstElementChild!;
+
+    const reordered = createListItemMovePlan(root, "three", "one", "before", () => "unused")!;
+    assert.deepEqual(directItemIDs(updatedRoot(reordered.operations[0].data)), ["three", "one", "two"]);
+    assert.equal(reordered.undoOperations[0].data, root.firstElementChild!.outerHTML);
+
+    const indented = createListItemMovePlan(root, "three", "one", "inside", () => "unused")!;
+    const indentedRoot = updatedRoot(indented.operations[0].data);
+    const childList = indentedRoot.querySelector('[data-node-id="one"] > [data-type="NodeList"]')!;
+    assert.deepEqual(directItemIDs(childList), ["child-one", "three"]);
+
+    const outdented = createListItemMovePlan(root, "child-one", "two", "after", () => "unused")!;
+    const outdentedRoot = updatedRoot(outdented.operations[0].data);
+    assert.deepEqual(directItemIDs(outdentedRoot), ["one", "two", "child-one", "three"]);
+    assert.equal(outdentedRoot.querySelector('[data-node-id="child-list"]'), null);
+
+    assert.equal(createListItemMovePlan(root, "one", "child-one", "inside", () => "unused"), null);
+    dom.window.close();
+});
+
+test("列表项拖动计划：有序列表排序后保留原起始编号", () => {
+    const dom = new JSDOM('<div><div data-type="NodeList" data-subtype="o" data-node-id="ordered">' +
+        '<div data-type="NodeListItem" data-node-id="five" data-marker="5."></div>' +
+        '<div data-type="NodeListItem" data-node-id="six" data-marker="6."></div>' +
+        '<div data-type="NodeListItem" data-node-id="seven" data-marker="7."></div></div></div>');
+    const root = dom.window.document.querySelector("div")!;
+    const plan = createListItemMovePlan(root, "five", "seven", "after", () => "unused")!;
+    const updated = new dom.window.DOMParser().parseFromString(plan.operations[0].data, "text/html");
+    const items = Array.from(updated.querySelectorAll<HTMLElement>('[data-type="NodeListItem"]'));
+    assert.deepEqual(items.map(item => item.dataset.nodeId), ["six", "seven", "five"]);
+    assert.deepEqual(items.map(item => item.dataset.marker), ["5.", "6.", "7."]);
+    dom.window.close();
+});
+
 test("大纲增强 Dock：拖到标题中部后提交成为子标题的可撤销事务", async () => {
     const env = setup();
     try {
@@ -117,6 +166,52 @@ test("大纲增强 Dock：拖到标题中部后提交成为子标题的可撤销
         assert.equal(env.container.querySelector(".heading-outline-dock__body")?.getAttribute("data-loading"), "true");
         source.click();
         assert.equal(env.navigations.length, 0);
+    } finally { env.cleanup(); }
+});
+
+test("大纲增强 Dock：列表项拖到另一项中部后提交缩进事务", async () => {
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        '<div class="list" data-type="NodeList" data-subtype="u" data-node-id="root-list">' +
+        '<div data-type="NodeListItem" data-node-id="one"><div data-type="NodeParagraph"><div contenteditable="true">第一项</div></div></div>' +
+        '<div data-type="NodeListItem" data-node-id="two"><div data-type="NodeParagraph"><div contenteditable="true">第二项</div></div></div>' +
+        '<div class="protyle-attr"></div></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree.slice(0, 1));
+    try {
+        env.editors[0].content.innerHTML = snapshot;
+        env.setSettings({ enableHeadingDock: true, headingListDepth: 2 });
+        await new Promise(resolve => setTimeout(resolve, 680));
+        const source = env.container.querySelector<HTMLButtonElement>('button[data-id="two"]')!;
+        const target = env.container.querySelector<HTMLButtonElement>('button[data-id="one"]')!;
+        const originalRootHTML = env.editors[0].content.querySelector('[data-node-id="root-list"]')!.outerHTML;
+        assert.equal(source.dataset.draggableOutline, "list");
+        target.getBoundingClientRect = () => ({
+            x: 40, y: 100, left: 40, right: 300, top: 100, bottom: 128, width: 260, height: 28, toJSON() {},
+        });
+
+        source.dispatchEvent(new env.win.MouseEvent("mousedown", {
+            bubbles: true, button: 0, clientX: 60, clientY: 50,
+        }));
+        target.dispatchEvent(new env.win.MouseEvent("mousemove", {
+            bubbles: true, clientX: 80, clientY: 114,
+        }));
+        assert.equal(target.classList.contains("dragover"), true);
+        env.win.document.dispatchEvent(new env.win.MouseEvent("mouseup", { bubbles: true }));
+
+        assert.equal(env.transactions.length, 1);
+        assert.equal(env.transactions[0].operations[0].action, "update");
+        assert.equal(env.transactions[0].operations[0].id, "root-list");
+        const updated = new env.win.DOMParser().parseFromString(
+            env.transactions[0].operations[0].data, "text/html"
+        );
+        const nested = updated.querySelector('[data-node-id="one"] > [data-type="NodeList"]')!;
+        assert.equal((nested as HTMLElement).dataset.nodeId, "new-child-list");
+        assert.deepEqual(Array.from(nested.children)
+            .filter(child => child.matches('[data-type="NodeListItem"]'))
+            .map(item => (item as HTMLElement).dataset.nodeId), ["two"]);
+        assert.equal(env.transactions[0].undoOperations[0].data, originalRootHTML);
+        assert.ok(env.editors[0].content.querySelector(
+            '[data-node-id="one"] > [data-node-id="new-child-list"] > [data-node-id="two"]'
+        ));
     } finally { env.cleanup(); }
 });
 

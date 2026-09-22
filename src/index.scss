@@ -348,7 +348,7 @@
         box-sizing: border-box;
         position: relative;
 
-        &[data-draggable-heading="true"] { cursor: grab; }
+        &[data-draggable-outline] { cursor: grab; }
 
         &:hover, &:focus-visible {
             background: var(--b3-list-hover);
