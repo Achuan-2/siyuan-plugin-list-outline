@@ -354,7 +354,7 @@
         }
     }
 
-    &__item {
+    &__item, &__document-title {
         display: flex;
         align-items: center;
         gap: 6px;
@@ -383,6 +383,15 @@
             color: var(--b3-theme-primary);
             font-weight: 500;
         }
+    }
+
+    &__document-title {
+        flex: none;
+        width: calc(100% - 16px);
+        margin: 4px 8px;
+        font-weight: 600;
+
+        &[hidden] { display: none; }
     }
 
     &__drag-ghost {

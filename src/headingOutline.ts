@@ -12,6 +12,7 @@ export interface HeadingEditor {
     element: HTMLElement;
     content: HTMLElement;
     rootID: string;
+    documentTitle?: string;
     notebook?: string;
     preview: boolean;
     disabled?: boolean;

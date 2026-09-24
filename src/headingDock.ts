@@ -17,7 +17,7 @@ export type OpenHeadingLevelMenu = (
 export interface HeadingDockOptions {
     getEditors(): HeadingEditor[];
     request(url: string, data: Record<string, unknown>): Promise<any>;
-    navigate(id: string, folded: boolean): void;
+    navigate(id: string, folded: boolean, documentTop?: boolean): void;
     reportError(message: string): void;
     openInsertMenu?: OpenInsertMenu;
     openHeadingLevelMenu?: OpenHeadingLevelMenu;
@@ -63,6 +63,8 @@ function createToolbarButton(
 export class HeadingOutlineDockView {
     public readonly rootElement = document.createElement("div");
     private header = document.createElement("div");
+    private documentTitle = document.createElement("button");
+    private documentTitleText = document.createElement("span");
     private body = document.createElement("div");
     private status = document.createElement("div");
     private listDepthSelect = document.createElement("select");
@@ -142,6 +144,34 @@ export class HeadingOutlineDockView {
         this.header.append(expandLevelBtn, expandAllBtn, collapseAllBtn, refreshBtn);
         if (!this.options.isMobile?.()) this.header.append(minimizeBtn);
 
+        this.documentTitle.type = "button";
+        this.documentTitle.className = "b3-list-item heading-outline-dock__document-title";
+        this.documentTitle.hidden = true;
+        const documentIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        documentIcon.classList.add("b3-list-item__graphic", "heading-outline-dock__icon");
+        documentIcon.setAttribute("aria-hidden", "true");
+        const documentUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        documentUse.setAttribute("href", "#iconFile");
+        documentIcon.append(documentUse);
+        this.documentTitleText.className = "b3-list-item__text heading-outline-dock__text";
+        this.documentTitle.append(documentIcon, this.documentTitleText);
+        this.documentTitle.addEventListener("click", () => {
+            const editor = this.editor;
+            if (!editor) return;
+            if (editor.preview) {
+                const content = editor.content.querySelector<HTMLElement>(".b3-typography") || editor.content;
+                content.scrollTop = 0;
+                return;
+            }
+            // 原生控件内部调用 goHome，必要时会重新加载长文档顶部。
+            const goHome = editor.element.querySelector<HTMLElement>(".protyle-scroll__up");
+            if (goHome) {
+                goHome.click();
+                return;
+            }
+            this.options.navigate(editor.rootID, true, true);
+        });
+
         // 搜索栏
         const searchContainer = document.createElement("div");
         searchContainer.className = "heading-outline-dock__search";
@@ -176,7 +206,7 @@ export class HeadingOutlineDockView {
         this.status.className = "heading-outline-dock__status";
         this.status.setAttribute("role", "status");
 
-        this.rootElement.append(this.header, searchContainer, this.body, this.status);
+        this.rootElement.append(this.header, this.documentTitle, searchContainer, this.body, this.status);
         this.container.append(this.rootElement);
 
         this.body.addEventListener("click", this.onClick);
@@ -221,6 +251,8 @@ export class HeadingOutlineDockView {
             // heartbeat 每次都会创建新的描述对象；原位同步可变状态，避免长拖动被误判为切换编辑器。
             this.editor.disabled = editor.disabled;
             this.editor.transaction = editor.transaction;
+            this.editor.documentTitle = editor.documentTitle;
+            this.renderDocumentTitle();
             if (movabilityChanged) {
                 this.render();
                 return;
@@ -232,6 +264,7 @@ export class HeadingOutlineDockView {
         clearTimeout(this.timer);
         this.observer.disconnect();
         this.editor = editor;
+        this.renderDocumentTitle();
         this.entries = [];
         this.currentEntryId = "";
         this.collapsedEntryIds.clear();
@@ -332,6 +365,14 @@ export class HeadingOutlineDockView {
             }
         }
         this.render();
+    }
+
+    private renderDocumentTitle() {
+        this.documentTitle.hidden = !this.editor;
+        const title = this.editor?.documentTitle?.trim() || "未命名文档";
+        if (this.documentTitleText.textContent !== title) this.documentTitleText.textContent = title;
+        this.documentTitle.title = `${title}\n点击返回文档顶部`;
+        this.documentTitle.setAttribute("aria-label", `${title}，返回文档顶部`);
     }
 
     private render() {

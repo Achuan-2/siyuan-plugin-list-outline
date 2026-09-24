@@ -47,14 +47,15 @@ export default class ListOutlinePlugin extends Plugin {
                     isMobile: () => getFrontend().includes("mobile"),
                     newNodeID: () => window.Lute.NewNodeID(),
                     request: this.request,
-                    navigate: (id, folded) => {
+                    navigate: (id, folded, documentTop) => {
                         const mobile = getFrontend().includes("mobile");
                         const action = mobile ? "cb-get-hl" : "cb-get-focus";
                         const actions: Parameters<typeof openMobileFileById>[2] = folded
                             ? [action, "cb-get-all", "cb-get-html", "cb-get-outline"]
                             : [action, "cb-get-outline", "cb-get-setid", "cb-get-context", "cb-get-html"];
                         if (mobile) openMobileFileById(this.app, id, actions);
-                        else void openTab({ app: this.app, doc: { id, action: actions } });
+                        else void openTab({ app: this.app, doc: { id, action: actions,
+                            ...(documentTop ? { zoomIn: true } : {}) } });
                     },
                     reportError: message => showMessage(message, 5000, "error"),
                 });
@@ -143,6 +144,7 @@ export default class ListOutlinePlugin extends Plugin {
         const content = preview ? protyle.preview.element : protyle.wysiwyg?.element;
         if (!content) return [];
         return [{ element: protyle.element, content, rootID: protyle.block.rootID,
+            documentTitle: String(protyle.title?.editElement?.textContent ?? protyle.background?.ial?.title ?? ""),
             notebook: protyle.notebookId, preview, disabled: protyle.disabled,
             transaction: editor.transaction.bind(editor) }];
     });
