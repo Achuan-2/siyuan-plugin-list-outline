@@ -29,6 +29,7 @@ interface Options {
     setListDepth?(depth: number): Promise<unknown>;
     isMobile?(): boolean;
     newNodeID?(): string;
+    renderMath?(element: HTMLElement): void;
 }
 
 interface OutlineDragState {
@@ -195,8 +196,10 @@ export class HeadingOutlineController {
         const editor = editors.find(item => preferred && (item.element === preferred || item.element.contains(preferred))) ||
             editors.find(item => item.element === this.editor?.element) ||
             editors.find(item => document.activeElement && item.element.contains(document.activeElement)) || editors[0] || null;
-        if (editor?.element === this.editor?.element && editor?.rootID === this.editor?.rootID &&
-            editor?.preview === this.editor?.preview && editor?.content === this.editor?.content) {
+        // 两者都为空时，可选链比较也会相等，但不存在可同步的编辑器状态。
+        if (!editor && !this.editor) return;
+        if (editor && this.editor && editor.element === this.editor.element && editor.rootID === this.editor.rootID &&
+            editor.preview === this.editor.preview && editor.content === this.editor.content) {
             const movabilityChanged = editor.disabled !== this.editor.disabled ||
                 !!editor.transaction !== !!this.editor.transaction;
             this.editor.disabled = editor.disabled;
@@ -218,7 +221,7 @@ export class HeadingOutlineController {
         this.panel.hidden = true;
         if (!editor) return;
         this.observer.observe(editor.content, { childList: true, subtree: true, characterData: true,
-            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "custom-list-outline-depth", "src", "data-src", "alt", "title",
+            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "style", "custom-list-outline-depth", "src", "data-src", "alt", "title",
                 "tabs-title", "tabs-active-id", "data-tabs-hidden"] });
         void this.refresh();
     }
@@ -348,6 +351,7 @@ export class HeadingOutlineController {
         }
         const scrollTop = this.body.scrollTop;
         this.body.replaceChildren(fragment);
+        this.options.renderMath?.(this.body);
         this.body.scrollTop = scrollTop;
         this.position();
     }

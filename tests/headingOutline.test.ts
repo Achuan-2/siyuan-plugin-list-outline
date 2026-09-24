@@ -10,7 +10,8 @@ const tree = [{ id: "h1", name: "<strong>一级标题</strong>", subType: "h1", 
 ] }, { id: "h2", name: "第二章", subType: "h2" }];
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
 
-function setup(request?: (url: string, data: Record<string, unknown>) => Promise<any>, mobile = false) {
+function setup(request?: (url: string, data: Record<string, unknown>) => Promise<any>, mobile = false,
+    withEditor = true) {
     const dom = new JSDOM('<div class="protyle"><div class="protyle-content"><div class="protyle-wysiwyg"><div data-type="NodeHeading" data-node-id="h1"><div contenteditable="true">标题</div></div></div></div></div>', { pretendToBeVisual: true });
     const win = dom.window;
     for (const key of ["window", "document", "Element", "Node", "HTMLElement", "DOMParser", "MutationObserver"]) {
@@ -22,6 +23,8 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     const transactions: any[] = [];
     const editors: HeadingEditor[] = [{ element: win.document.querySelector('.protyle')!, content: win.document.querySelector('.protyle-wysiwyg')!, rootID: "doc1", notebook: "notebook1", preview: false,
         transaction: (operations, undoOperations) => transactions.push({ operations, undoOperations }) }];
+    const initialEditor = editors[0];
+    if (!withEditor) editors.length = 0;
     const calls: { url: string; data: Record<string, unknown> }[] = [];
     const navigations: { id: string; folded: boolean }[] = [];
     const menus: any[] = [];
@@ -36,10 +39,38 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
         openInsertMenu: (event, target) => { event.preventDefault(); menus.push(target); },
     });
     const panel = win.document.querySelector<HTMLElement>('.heading-outline-floating')!;
-    return { win, editors, calls, navigations, transactions, menus, controller, panel,
+    return { win, editors, initialEditor, calls, navigations, transactions, menus, controller, panel,
         setSettings: (value: Parameters<typeof normalizeSettings>[0]) => { settings = normalizeSettings(value); controller.refreshSettings(); },
         cleanup: () => { controller.destroy(); win.close(); } };
 }
+
+test("悬浮大纲增强：无文档启动和定时同步不报错，打开再关闭文档后仍可同步", async () => {
+    const env = setup(undefined, false, false);
+    try {
+        env.controller.syncEditors();
+        await new Promise(resolve => setTimeout(resolve, 550));
+        assert.equal(env.panel.hidden, true);
+        assert.equal(env.calls.length, 0);
+
+        env.editors.push(env.initialEditor);
+        env.controller.syncEditors();
+        await settle();
+        assert.equal(env.panel.hidden, false);
+        assert.equal(env.panel.querySelectorAll("button[data-id]").length, 4);
+
+        env.editors.length = 0;
+        env.controller.syncEditors();
+        env.controller.syncEditors();
+        assert.equal(env.panel.hidden, true);
+        assert.equal(env.panel.querySelectorAll("button[data-id]").length, 0);
+
+        env.editors.push(env.initialEditor);
+        env.controller.syncEditors();
+        await settle();
+        assert.equal(env.panel.hidden, false);
+        assert.equal(env.panel.querySelectorAll("button[data-id]").length, 4);
+    } finally { env.cleanup(); }
+});
 
 test("旧设置补齐独立开关，关闭任一功能不影响另一功能", () => {
     assert.equal(normalizeSettings({ defaultDepth: 4 }).enableHeadingOutline, true);
@@ -435,7 +466,7 @@ test("读取原生 name/blocks/content/children 树，跳级标题按真实父�
     const env = setup();
     try {
         assert.deepEqual(flattenHeadingTree(tree), [
-            { id: "h1", text: "1. 一级标题", depth: 1, level: 1 },
+            { id: "h1", text: "1. 一级标题", inlineHTML: "<span>1. </span><strong>一级标题</strong>", depth: 1, level: 1 },
             { id: "h3", text: "三级标题", depth: 2, level: 3 },
             { id: "h6", text: "六级标题", depth: 3, level: 6 },
             { id: "h2", text: "第二章", depth: 1, level: 2 },
@@ -444,7 +475,7 @@ test("读取原生 name/blocks/content/children 树，跳级标题按真实父�
     } finally { env.cleanup(); }
 });
 
-test("标题 HTML 只提取文本，保留转义字符与图片说明", () => {
+test("标题 HTML 保留行内结构，搜索文本保留转义字符与图片说明", () => {
     const env = setup();
     try {
         assert.equal(flattenHeadingTree([{ id: "safe", name: '<script>alert(1)</script>&lt;img&gt;<img alt="图片">' }])[0].text, "<img>图片");

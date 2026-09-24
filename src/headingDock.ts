@@ -25,6 +25,7 @@ export interface HeadingDockOptions {
     setListDepth?(depth: number): Promise<unknown>;
     isMobile?(): boolean;
     newNodeID?(): string;
+    renderMath?(element: HTMLElement): void;
 }
 
 interface OutlineDragState {
@@ -277,7 +278,7 @@ export class HeadingOutlineDockView {
         }
         this.observer.observe(editor.content, {
             childList: true, subtree: true, characterData: true,
-            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "custom-list-outline-depth", "src", "data-src", "alt", "title",
+            attributes: true, attributeFilter: ["data-type", "data-subtype", "data-content", "style", "custom-list-outline-depth", "src", "data-src", "alt", "title",
                 "tabs-title", "tabs-active-id", "data-tabs-hidden"],
         });
         void this.refresh();
@@ -452,6 +453,7 @@ export class HeadingOutlineDockView {
         }
         const scrollTop = this.body.scrollTop;
         this.body.replaceChildren(fragment);
+        this.options.renderMath?.(this.body);
         this.body.scrollTop = scrollTop;
         this.highlight();
     }

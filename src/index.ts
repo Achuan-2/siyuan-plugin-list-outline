@@ -1,4 +1,4 @@
-import { Plugin, Dialog, Menu, fetchSyncPost, openTab, openMobileFileById, getFrontend, getAllEditor, showMessage, type IProtyle } from "siyuan";
+import { Plugin, ProtyleMethod, Dialog, Menu, fetchSyncPost, openTab, openMobileFileById, getFrontend, getAllEditor, showMessage, type IProtyle } from "siyuan";
 import "./index.scss";
 import SettingPanel from "./SettingPanel.svelte";
 import { normalizeSettings, type OutlineSettings } from "./defaultSettings";
@@ -46,6 +46,7 @@ export default class ListOutlinePlugin extends Plugin {
                     openHeadingLevelMenu: this.openHeadingLevelMenu,
                     isMobile: () => getFrontend().includes("mobile"),
                     newNodeID: () => window.Lute.NewNodeID(),
+                    renderMath: element => ProtyleMethod.mathRender(element),
                     request: this.request,
                     navigate: (id, folded, documentTop) => {
                         const mobile = getFrontend().includes("mobile");
@@ -155,6 +156,7 @@ export default class ListOutlinePlugin extends Plugin {
         if (this.settings.enableHeadingDock) this.registerHeadingDock();
         else this.unregisterHeadingDock();
         if (this.settings.enableListOutline && !this.outline) this.outline = new ListOutlineController({
+            renderMath: element => ProtyleMethod.mathRender(element),
             getSettings: () => this.settings,
             request: this.request,
             openInsertMenu: this.openInsertMenu,
@@ -175,6 +177,7 @@ export default class ListOutlinePlugin extends Plugin {
             getEditors: this.getHeadingEditors,
             isMobile: () => getFrontend().includes("mobile"),
             newNodeID: () => window.Lute.NewNodeID(),
+            renderMath: element => ProtyleMethod.mathRender(element),
             getSettings: () => this.settings,
             setListDepth: depth => this.saveSettings({ ...this.settings, headingListDepth: depth }),
             openInsertMenu: this.openInsertMenu,

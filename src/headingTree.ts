@@ -1,5 +1,6 @@
 import { blockDepth, DEPTH_ATTRIBUTE, EMBED_RESULT_SELECTOR, extractOutline, findRootLists, OUTLINE_CONTAINER_SELECTOR, OUTLINE_ITEM_SELECTOR,
     type OutlineEntry } from "./outline";
+import { extractOutlineInlineContent, parseOutlineInlineHTML } from "./outlineInline";
 
 // 对应思源 kernel/model/outline.go：顶层 Path 使用 name/blocks，子级 Block 使用 content/children。
 export interface NativeHeading {
@@ -88,15 +89,10 @@ function mergeRenderedEmbeds(document: Document, liveRoot?: Element | null) {
     }
 }
 
-function extractParagraphText(paragraph: HTMLElement): string {
+function extractParagraphContent(paragraph: HTMLElement): Pick<OutlineEntry, "text" | "inlineHTML"> {
     const content = paragraph.querySelector<HTMLElement>('[contenteditable="true"]');
-    const clone = (content || paragraph).cloneNode(true) as HTMLElement;
-    clone.querySelectorAll('.protyle-attr, .protyle-action, .protyle-action__title, script, style, .img__net')
-        .forEach(node => node.remove());
-    clone.querySelectorAll('[data-type="inline-math"]').forEach(math =>
-        math.replaceWith(math.getAttribute("data-content") || math.textContent || ""));
-    clone.querySelectorAll('img').forEach(img => img.replaceWith(img.getAttribute('alt') || "图片"));
-    return (clone.textContent || "").replace(/[\u200b\ufeff]/g, "").replace(/\s+/g, " ").trim() || "（空段落）";
+    const inline = extractOutlineInlineContent(content || paragraph);
+    return { text: inline.text || "（空段落）", ...(inline.html ? { inlineHTML: inline.html } : {}) };
 }
 
 export function findEmbeddedOutlineTarget(root: Element, id: string, embedId: string): HTMLElement | null {
@@ -147,7 +143,7 @@ export function includeListsInHeadingTree(headings: HeadingEntry[], dom: string,
             const paragraphEmbedId = paragraph?.closest<HTMLElement>(EMBED_SELECTOR)?.dataset.nodeId;
             if (paragraph && !seenParagraphs.has(paragraphId)) {
                 seenParagraphs.add(paragraphId);
-                entries.push({ id: paragraphId, text: extractParagraphText(paragraph),
+                entries.push({ id: paragraphId, ...extractParagraphContent(paragraph),
                     depth: baseDepth + 1, level: 0, kind: "paragraph",
                     ...(paragraphEmbedId ? { embedId: paragraphEmbedId } : {}) });
             }
@@ -166,7 +162,7 @@ export function includeListsInHeadingTree(headings: HeadingEntry[], dom: string,
             const firstEntry = firstItem ? listItems.get(firstItem.dataset.nodeId || "") : undefined;
             if (!firstEntry) continue;
             const embedId = list.closest<HTMLElement>(EMBED_SELECTOR)?.dataset.nodeId;
-            entries.push({ id, text: extractParagraphText(node), depth: firstEntry.depth, level: 0,
+            entries.push({ id, ...extractParagraphContent(node), depth: firstEntry.depth, level: 0,
                 kind: "paragraph", ...(embedId ? { embedId } : {}) });
             for (const item of Array.from(list.querySelectorAll<HTMLElement>(OUTLINE_ITEM_SELECTOR))) {
                 const entry = listItems.get(item.dataset.nodeId || "");
@@ -191,16 +187,20 @@ export function flattenHeadingTree(nodes: NativeHeading[] | null): HeadingEntry[
             // Block.name 是块命名属性（常为空），不是子标题正文；原生 Tree.genBlockHTML 读取 content。
             const isBlock = typeof node.content === "string";
             let text = isBlock ? node.content! : node.name ?? "";
+            let inlineHTML: string | undefined;
             if (isBlock || node.nameIsHTML !== false) {
-                const parsed = new DOMParser().parseFromString(text, "text/html");
-                parsed.querySelectorAll("script,style").forEach(element => element.remove());
-                parsed.querySelectorAll("img").forEach(element => element.replaceWith(element.alt || "图片"));
-                parsed.querySelectorAll('[data-type="inline-math"]').forEach(element =>
-                    element.replaceWith(element.getAttribute("data-content") || element.textContent || ""));
-                text = parsed.body.textContent || "";
+                const content = parseOutlineInlineHTML(text);
+                text = content.text;
+                inlineHTML = content.html;
             }
             text = text.replace(/[\u200b\ufeff]/g, "").replace(/\s+/g, " ").trim() || "（空标题）";
+            if (inlineHTML && node.number) {
+                const number = document.createElement("span");
+                number.textContent = `${node.number} `;
+                inlineHTML = number.outerHTML + inlineHTML;
+            }
             entries.push({ id: node.id, text: node.number ? `${node.number} ${text}` : text, depth,
+                ...(inlineHTML ? { inlineHTML } : {}),
                 level: /^h[1-6]$/.test(node.subType || "") ? Number(node.subType![1]) : Math.min(depth, 6) });
             visit([...(node.blocks || []), ...(node.children || [])], depth + 1);
         }

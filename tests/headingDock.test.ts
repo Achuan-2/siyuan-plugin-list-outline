@@ -80,6 +80,88 @@ test("大纲增强 Dock：没有可见编辑器时仍可正常挂载", () => {
     } finally { env.cleanup(); }
 });
 
+test("大纲增强 Dock：保留行内格式，跨格式搜索和点击仍定位标题", async () => {
+    const env = setup(async url => url.endsWith("checkBlockFold") ? { isFolded: false } : [{
+        id: "rich", subType: "h1", nameIsHTML: true, number: "1.",
+        name: '<span data-type="strong em">粗体</span><span data-type="code">代码</span>&nbsp;&nbsp;' +
+            '<span data-type="mark" style="color: red">标记</span>' +
+            '<span data-type="sup">2</span><span data-type="inline-math" data-content="x^2"></span>',
+    }]);
+    try {
+        await settle();
+        const row = () => env.container.querySelector<HTMLButtonElement>('button[data-id="rich"]')!;
+        assert.equal(row().querySelector('[data-type="strong em"]')?.textContent, "粗体");
+        assert.equal(row().querySelector('[data-type="sup"]')?.textContent, "2");
+        assert.equal(row().querySelector<HTMLElement>('[data-type="mark"]')?.style.color, "red");
+        assert.equal(row().querySelector('[data-subtype="math"]')?.getAttribute("data-content"), "x^2");
+        const search = env.container.querySelector<HTMLInputElement>('input[type="search"]')!;
+        search.value = "体代";
+        search.dispatchEvent(new env.win.Event("input"));
+        assert.equal(row().querySelector('[data-type="strong em"] .list-outline-floating__match')?.textContent, "体");
+        assert.equal(row().querySelector('[data-type="code"] .list-outline-floating__match')?.textContent, "代");
+        row().querySelector<HTMLElement>('[data-type="strong em"]')!.click();
+        await settle();
+        assert.deepEqual(env.navigations, [{ id: "rich", folded: false }]);
+        search.value = "代码 标记";
+        search.dispatchEvent(new env.win.Event("input"));
+        assert.equal(row().querySelector('[data-type="code"] .list-outline-floating__match')?.textContent, "代码");
+        assert.equal(row().querySelector('[data-type="mark"] .list-outline-floating__match')?.textContent, "标记");
+        search.value = "x^2";
+        search.dispatchEvent(new env.win.Event("input"));
+        assert.ok(row().querySelector('[data-subtype="math"].list-outline-floating__match'));
+    } finally { env.cleanup(); }
+});
+
+test("大纲增强 Dock：行内展示移除可执行内容和编辑器跳转属性", async () => {
+    const env = setup(async () => [{ id: "safe", nameIsHTML: true,
+        name: '<script>alert(1)</script><span data-type="block-ref" data-id="other" onclick="alert(1)" ' +
+            'contenteditable="true" style="color: red; position: fixed">引用</span>' +
+            '<img src="javascript:alert(1)" onerror="alert(1)" alt="图片"><iframe src="https://example.com"></iframe>',
+    }, { id: "plain", name: "<strong>字面内容</strong>", nameIsHTML: false }]);
+    try {
+        await settle();
+        const label = env.container.querySelector<HTMLElement>('[data-id="safe"] .heading-outline-dock__text')!;
+        assert.equal(label.querySelector("script,iframe,[onclick],[onerror],[contenteditable],[data-id]"), null);
+        assert.equal(label.querySelector("img")?.getAttribute("src"), null);
+        const reference = label.querySelector<HTMLElement>('[data-type="block-ref"]')!;
+        assert.equal(reference.style.color, "red");
+        assert.equal(reference.style.position, "");
+        const plain = env.container.querySelector('[data-id="plain"] .heading-outline-dock__text')!;
+        assert.equal(plain.querySelector("strong"), null);
+        assert.equal(plain.textContent, "<strong>字面内容</strong>");
+    } finally { env.cleanup(); }
+});
+
+test("大纲增强 Dock：段落、列表及页签标题保留行内元素，不混入子项和页签正文", async () => {
+    const paragraph = (id: string, html: string) => `<div data-type="NodeParagraph" data-node-id="${id}"><div contenteditable="true">${html}</div></div>`;
+    const snapshot = paragraph("intro", '<span data-type="strong">段落说明</span>') +
+        '<div data-type="NodeList" data-node-id="list"><div data-type="NodeListItem" data-node-id="item">' +
+        paragraph("item-content", '<span data-type="code">列表代码</span><span data-type="inline-math" data-content="a+b"><span>公式渲染副本</span></span>') +
+        '<div data-type="NodeList" data-node-id="child-list"><div data-type="NodeListItem" data-node-id="child">' +
+        paragraph("child-content", '<span data-type="em">列表子项</span>') + '</div></div></div></div>' +
+        '<div data-type="NodeTabs" data-node-id="tabs"><div data-type="NodeTabItem" data-node-id="tab">' +
+        '<div class="tab-item-info"><div tabs-title="true"><div class="tab-item-title" contenteditable="true">' +
+        '<span data-type="mark">页签标题</span></div></div></div><div class="tab-item-content">' +
+        paragraph("tab-body", "不应混入标题的正文") + '</div></div></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : []);
+    try {
+        env.setSettings({ headingListDepth: 3 });
+        await settle();
+        const label = (id: string) => env.container.querySelector<HTMLElement>(`[data-id="${id}"] .heading-outline-dock__text`)!;
+        assert.equal(label("intro").querySelector('[data-type="strong"]')?.textContent, "段落说明");
+        assert.equal(label("item").querySelector('[data-type="code"]')?.textContent, "列表代码");
+        assert.equal(label("item").querySelector('[data-subtype="math"]')?.getAttribute("data-content"), "a+b");
+        assert.equal(label("item").textContent, "列表代码a+b");
+        assert.equal(label("child").querySelector('[data-type="em"]')?.textContent, "列表子项");
+        assert.equal(label("tab").querySelector('[data-type="mark"]')?.textContent, "页签标题");
+        assert.equal(label("tab").textContent, "页签标题");
+        const search = env.container.querySelector<HTMLInputElement>('input[type="search"]')!;
+        search.value = "页签";
+        search.dispatchEvent(new env.win.Event("input"));
+        assert.equal(label("tab").querySelector('[data-type="mark"] .list-outline-floating__match')?.textContent, "页签");
+    } finally { env.cleanup(); }
+});
+
 test("标题拖动计划：支持同级排序、成为子标题并拒绝循环移动", () => {
     const entries = [
         { id: "h1", text: "一级", depth: 1, level: 1 },

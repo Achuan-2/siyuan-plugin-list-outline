@@ -1,4 +1,5 @@
 import type { OutlineEntry } from "./outline";
+import { highlightOutlineLabel } from "./outlineInline";
 
 export function createOutlineLabel(entry: OutlineEntry, highlightKeyword?: string,
     className = "list-outline-floating__text"): HTMLSpanElement {
@@ -26,6 +27,12 @@ export function createOutlineLabel(entry: OutlineEntry, highlightKeyword?: strin
     }
 
     const kw = highlightKeyword?.trim();
+    if (entry.inlineHTML) {
+        label.classList.add("outline-entry__rich");
+        label.innerHTML = entry.inlineHTML;
+        if (kw) highlightOutlineLabel(label, kw);
+        return label;
+    }
     if (kw) {
         const lowerText = entry.text.toLowerCase();
         const lowerKw = kw.toLowerCase();

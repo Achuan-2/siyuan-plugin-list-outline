@@ -10,6 +10,7 @@ interface Options {
     navigate(id: string): void;
     reportError(message: string): void;
     openInsertMenu?: OpenInsertMenu;
+    renderMath?(element: HTMLElement): void;
 }
 
 export class ListOutlineView {
@@ -108,7 +109,7 @@ export class ListOutlineView {
         this.observer = new MutationObserver(this.onMutation);
         this.observer.observe(this.active, {
             childList: true, subtree: true, characterData: true, attributes: true,
-            attributeFilter: [DEPTH_ATTRIBUTE, "fold", "data-type", "data-content", "src", "data-src", "alt", "title",
+            attributeFilter: [DEPTH_ATTRIBUTE, "fold", "data-type", "data-content", "style", "src", "data-src", "alt", "title",
                 "tabs-title", "tabs-active-id", "data-tabs-hidden"],
         });
         this.resizeObserver = new ResizeObserver(this.schedulePosition);
@@ -325,6 +326,7 @@ export class ListOutlineView {
         }
         const scrollTop = this.body.scrollTop;
         this.body.replaceChildren(fragment);
+        this.options.renderMath?.(this.body);
         this.body.scrollTop = scrollTop;
         this.position();
     }

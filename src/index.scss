@@ -130,6 +130,45 @@
     &--expanded .list-outline-floating__current { background: var(--b3-list-hover); }
 }
 
+// 对齐思源原生 _list.scss 的大纲行内样式，同时用于 Dock 和悬浮大纲。
+.outline-entry__rich {
+    // 行内链接、引用等仅作展示；点击和拖动仍由大纲条目处理。
+    > * { pointer-events: none; }
+    [data-type~="strong"] { color: var(--b3-protyle-inline-strong-color); font-weight: bold; }
+    [data-type~="em"] { color: var(--b3-protyle-inline-em-color); font-style: italic; }
+    [data-type~="s"] { color: var(--b3-protyle-inline-s-color); text-decoration: line-through; }
+    [data-type~="u"] { color: var(--b3-protyle-inline-u-color); border-bottom: 1px solid; }
+    [data-type~="mark"] { color: var(--b3-protyle-inline-mark-color); background: var(--b3-protyle-inline-mark-background); }
+    [data-type~="tag"] { color: var(--b3-protyle-inline-tag-color); border-bottom: 1px solid; padding: 0 1px; }
+    [data-type~="a"] { color: var(--b3-protyle-inline-link-color); }
+    [data-type~="block-ref"] { color: var(--b3-protyle-inline-blockref-color); opacity: .86; }
+    [data-type~="file-annotation-ref"] { color: var(--b3-protyle-inline-fileref-color); opacity: .86; }
+    [data-type~="inline-memo"] { background: var(--b3-card-info-background); border-bottom: 2px solid var(--b3-card-info-color); }
+    [data-type~="sup"], [data-type~="sub"] { position: relative; font-size: 75%; line-height: 0; vertical-align: baseline; }
+    [data-type~="sup"] { top: -.5em; }
+    [data-type~="sub"] { bottom: -.25em; }
+    [data-type~="code"], code {
+        font-family: var(--b3-font-family-code);
+        font-size: 85%;
+        background: var(--b3-protyle-code-background);
+        border-radius: var(--b3-border-radius);
+        padding: .2em .4em;
+        tab-size: 4;
+    }
+    [data-type~="kbd"], kbd {
+        padding: 2px 4px;
+        font: 75% var(--b3-font-family-kbd);
+        line-height: 1;
+        vertical-align: middle;
+        color: var(--b3-theme-on-surface);
+        background: var(--b3-theme-surface);
+        border: 1px solid var(--b3-theme-surface-lighter);
+        border-radius: var(--b3-border-radius);
+        box-shadow: inset 0 -1px 0 var(--b3-theme-surface-lighter);
+    }
+    img { max-height: 1.5em; max-width: 100%; vertical-align: middle; }
+}
+
 .outline-entry__label--images {
     align-items: center;
     gap: 8px;

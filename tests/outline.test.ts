@@ -21,7 +21,7 @@ const nested = list("root", item("one", "父项 <strong>加粗</strong>", paragr
 test("仅列表项生成层级，父标题不包含子列表、附加段落和块属性", () => {
     const document = new JSDOM(nested).window.document;
     assert.deepEqual(extractOutline(document.body.firstElementChild as HTMLElement, 3), [
-        { id: "one", text: "父项 加粗", depth: 1 },
+        { id: "one", text: "父项 加粗", inlineHTML: "父项 <strong>加粗</strong>", depth: 1 },
         { id: "two", text: "子项", depth: 2 },
         { id: "three", text: "孙项", depth: 3 },
         { id: "four", text: "兄弟项", depth: 1 },
