@@ -112,6 +112,10 @@ export default class ListOutlinePlugin extends Plugin {
                     this.headingFoldStates[documentId] = {
                         collapsedIds: (value as HeadingFoldState).collapsedIds.filter(id => typeof id === "string"),
                         showLists: (value as HeadingFoldState).showLists === true,
+                        expandedListIds: Array.isArray((value as HeadingFoldState).expandedListIds)
+                            ? (value as HeadingFoldState).expandedListIds!.filter(id => typeof id === "string") : [],
+                        expandedTabIds: Array.isArray((value as HeadingFoldState).expandedTabIds)
+                            ? (value as HeadingFoldState).expandedTabIds!.filter(id => typeof id === "string") : [],
                     };
                 }
             }

@@ -1,5 +1,5 @@
-import { expandCollapsedAncestors, filterCollapsedEntries, findClosestHeadingOutlineTargetId, findEmbeddedOutlineTarget,
-    flattenHeadingTree, getCollapsibleEntryIds, getHeadingEntries, getHeadingOutlineTargetSelector, includeListsInHeadingTree,
+import { expandCollapsedAncestors, filterCollapsedEntries, filterHeadingListEntries, findClosestHeadingOutlineTargetId, findEmbeddedOutlineTarget,
+    flattenHeadingTree, getCollapsibleEntryIds, getEffectiveCollapsedIds, getHeadingOutlineTargetSelector, includeListsInHeadingTree,
     type HeadingEntry, type HeadingFoldState } from "./headingTree";
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import type { HeadingEditor } from "./headingOutline";
@@ -77,6 +77,8 @@ export class HeadingOutlineDockView {
     private entries: HeadingEntry[] = [];
     private currentEntryId = "";
     private collapsedEntryIds = new Set<string>();
+    private expandedListEntryIds = new Set<string>();
+    private expandedTabIds = new Set<string>();
     private expandedHeadingLevel = 6;
     private showListEntries = false;
     private keepCurrentExpandButton?: HTMLButtonElement;
@@ -124,6 +126,7 @@ export class HeadingOutlineDockView {
                 await this.options.setListDepth?.(depth);
                 if (!this.disposed) {
                     this.showListEntries = depth > 0;
+                    this.expandedTabIds.clear();
                     this.saveFoldState();
                     await this.refresh();
                 }
@@ -296,7 +299,9 @@ export class HeadingOutlineDockView {
         this.currentEntryId = "";
         const foldState = editor ? this.options.getFoldState?.(editor.rootID) : undefined;
         this.collapsedEntryIds = new Set(foldState?.collapsedIds || []);
-        this.showListEntries = this.settings.headingListDepth > 0;
+        this.expandedListEntryIds = new Set(foldState?.expandedListIds || []);
+        this.expandedTabIds = new Set(foldState?.expandedTabIds || []);
+        this.showListEntries = foldState?.showLists ?? false;
         this.body.replaceChildren();
         this.body.removeAttribute("data-loading");
         this.status.textContent = "";
@@ -365,6 +370,8 @@ export class HeadingOutlineDockView {
         const depth = this.settings.headingListDepth;
         if (Number(this.listDepthSelect.value) !== depth) {
             this.showListEntries = depth > 0;
+            this.expandedListEntryIds.clear();
+            this.expandedTabIds.clear();
             this.saveFoldState();
         }
         this.listDepthSelect.value = String(depth);
@@ -378,12 +385,16 @@ export class HeadingOutlineDockView {
     private expandAll() {
         this.collapsedEntryIds.clear();
         this.showListEntries = true;
+        this.expandedTabIds = new Set(this.entries.filter(entry => entry.kind === "tab").map(entry => entry.id));
         this.saveFoldState();
         this.render();
     }
 
     private collapseAll() {
         this.collapsedEntryIds = getCollapsibleEntryIds(this.entries);
+        this.expandedListEntryIds.clear();
+        this.expandedTabIds.clear();
+        this.showListEntries = false;
         this.saveFoldState();
         this.render();
     }
@@ -394,6 +405,8 @@ export class HeadingOutlineDockView {
         this.expandedHeadingLevel = level;
         this.showListEntries = true;
         this.collapseToHeadingLevel(level);
+        this.expandedTabIds = level === 6
+            ? new Set(this.entries.filter(entry => entry.kind === "tab").map(entry => entry.id)) : new Set();
         this.saveFoldState();
         this.render();
     }
@@ -423,6 +436,8 @@ export class HeadingOutlineDockView {
         if (!this.editor || !this.options.saveFoldState) return;
         void this.options.saveFoldState(this.editor.rootID, {
             collapsedIds: [...this.collapsedEntryIds], showLists: this.showListEntries,
+            expandedListIds: [...this.expandedListEntryIds],
+            expandedTabIds: [...this.expandedTabIds],
         }).catch(error => {
             console.error("大纲增强 Dock：保存折叠状态失败", error);
             if (!this.disposed) this.options.reportError("大纲折叠状态保存失败，请重试。");
@@ -432,10 +447,18 @@ export class HeadingOutlineDockView {
     applyFoldState(documentId: string, state: HeadingFoldState) {
         if (this.editor?.rootID !== documentId || this.disposed) return;
         const collapsed = new Set(state.collapsedIds);
-        if (this.showListEntries === (this.settings.headingListDepth > 0) && collapsed.size === this.collapsedEntryIds.size &&
-            [...collapsed].every(id => this.collapsedEntryIds.has(id))) return;
+        const expandedLists = new Set(state.expandedListIds || []);
+        const expandedTabs = new Set(state.expandedTabIds || []);
+        if (this.showListEntries === state.showLists && collapsed.size === this.collapsedEntryIds.size &&
+            [...collapsed].every(id => this.collapsedEntryIds.has(id)) &&
+            expandedLists.size === this.expandedListEntryIds.size &&
+            [...expandedLists].every(id => this.expandedListEntryIds.has(id)) &&
+            expandedTabs.size === this.expandedTabIds.size &&
+            [...expandedTabs].every(id => this.expandedTabIds.has(id))) return;
         this.collapsedEntryIds = collapsed;
-        this.showListEntries = this.settings.headingListDepth > 0;
+        this.expandedListEntryIds = expandedLists;
+        this.expandedTabIds = expandedTabs;
+        this.showListEntries = state.showLists;
         this.render();
     }
 
@@ -458,15 +481,22 @@ export class HeadingOutlineDockView {
         }
 
         const query = this.searchQuery.toLowerCase();
-        const visibleTree = this.showListEntries ? this.entries : getHeadingEntries(this.entries);
-        const collapsibleIds = getCollapsibleEntryIds(visibleTree);
+        const { visible: visibleTree, listOwnerIds } = filterHeadingListEntries(this.entries,
+            this.showListEntries, this.expandedListEntryIds, this.expandedTabIds);
+        const visibleCollapsibleIds = getCollapsibleEntryIds(visibleTree);
+        const collapsibleIds = new Set(visibleCollapsibleIds);
         const allCollapsibleIds = getCollapsibleEntryIds(this.entries);
+        for (const id of listOwnerIds) if (allCollapsibleIds.has(id)) collapsibleIds.add(id);
+        for (const entry of visibleTree) {
+            if (entry.kind === "tab" && allCollapsibleIds.has(entry.id)) collapsibleIds.add(entry.id);
+        }
         for (const id of this.collapsedEntryIds) {
             if (!allCollapsibleIds.has(id)) this.collapsedEntryIds.delete(id);
         }
+        const effectiveCollapsedIds = getEffectiveCollapsedIds(visibleTree, this.collapsedEntryIds, this.expandedTabIds);
         const filteredEntries = query
             ? this.entries.filter(e => e.text.toLowerCase().includes(query))
-            : filterCollapsedEntries(visibleTree, this.collapsedEntryIds);
+            : filterCollapsedEntries(visibleTree, effectiveCollapsedIds);
 
         if (!this.entries.length) {
             this.status.textContent = this.status.textContent || "当前文档暂无标题";
@@ -518,7 +548,8 @@ export class HeadingOutlineDockView {
             }
             item.setAttribute("aria-label", `第 ${entry.depth} 层：${entry.text}`);
             if (!query && collapsibleIds.has(entry.id)) {
-                container.append(createOutlineFoldButton(entry, !this.collapsedEntryIds.has(entry.id),
+                const expanded = !effectiveCollapsedIds.has(entry.id) && visibleCollapsibleIds.has(entry.id);
+                container.append(createOutlineFoldButton(entry, expanded,
                     "heading-outline-dock__fold"));
             }
             container.append(item);
@@ -543,8 +574,24 @@ export class HeadingOutlineDockView {
             event.preventDefault();
             event.stopPropagation();
             const id = toggle.dataset.outlineToggle!;
-            if (this.collapsedEntryIds.has(id)) this.collapsedEntryIds.delete(id);
-            else this.collapsedEntryIds.add(id);
+            const entry = this.entries.find(item => item.id === id);
+            if (entry?.kind === "tab") {
+                if (this.expandedTabIds.has(id)) this.expandedTabIds.delete(id);
+                else this.expandedTabIds.add(id);
+                this.collapsedEntryIds.delete(id);
+                this.saveFoldState();
+                this.render();
+                return;
+            }
+            const { visible, listOwnerIds } = filterHeadingListEntries(this.entries,
+                this.showListEntries, this.expandedListEntryIds, this.expandedTabIds);
+            if (this.collapsedEntryIds.has(id)) {
+                this.collapsedEntryIds.delete(id);
+                if (listOwnerIds.has(id)) this.expandedListEntryIds.add(id);
+            } else if (!this.showListEntries && listOwnerIds.has(id) &&
+                !getCollapsibleEntryIds(visible).has(id)) {
+                this.expandedListEntryIds.add(id);
+            } else this.collapsedEntryIds.add(id);
             this.saveFoldState();
             this.render();
             return;
@@ -799,7 +846,8 @@ export class HeadingOutlineDockView {
             this.currentEntryId = current;
         }
         if (current && this.settings.keepCurrentHeadingExpanded &&
-            expandCollapsedAncestors(this.entries, current, this.collapsedEntryIds)) {
+            expandCollapsedAncestors(this.entries, current, this.collapsedEntryIds,
+                this.expandedListEntryIds, this.expandedTabIds)) {
             this.saveFoldState();
             this.render();
             return;

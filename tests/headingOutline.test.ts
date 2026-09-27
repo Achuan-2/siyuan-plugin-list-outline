@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import { normalizeSettings } from "../src/defaultSettings";
-import { flattenHeadingTree, includeListsInHeadingTree } from "../src/headingTree";
+import { expandCollapsedAncestors, filterHeadingListEntries, flattenHeadingTree, includeListsInHeadingTree } from "../src/headingTree";
 import { HeadingOutlineController, type HeadingEditor } from "../src/headingOutline";
 
 const tree = [{ id: "h1", name: "<strong>一级标题</strong>", subType: "h1", number: "1.", blocks: [
@@ -29,7 +29,8 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     const navigations: { id: string; folded: boolean }[] = [];
     const menus: any[] = [];
     let settings = normalizeSettings(initialSettings);
-    const foldStates: Record<string, { collapsedIds: string[]; showLists: boolean }> = {};
+    const foldStates: Record<string, { collapsedIds: string[]; showLists: boolean; expandedListIds?: string[];
+        expandedTabIds?: string[] }> = {};
     const controller = new HeadingOutlineController({ getEditors: () => editors,
         isMobile: () => mobile,
         newNodeID: () => "new-child-list",
@@ -79,20 +80,23 @@ test("悬浮大纲增强：无文档启动和定时同步不报错，打开再�
     } finally { env.cleanup(); }
 });
 
-test("悬浮大纲增强：设置列表层级后直接显示列表并记住折叠", async () => {
+test("悬浮大纲增强：默认只显示标题，单独展开标题可显示列表", async () => {
     const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
         '<div data-type="NodeHeading" data-node-id="h3"></div>' +
         '<div data-type="NodeHeading" data-node-id="h6"></div>' +
         '<div data-type="NodeList" data-node-id="list"><div data-type="NodeListItem" data-node-id="item">' +
         '<div data-type="NodeParagraph"><div contenteditable="true">列表项</div></div></div></div>' +
-        '<div data-type="NodeHeading" data-node-id="h2"></div>';
+        '<div data-type="NodeHeading" data-node-id="h2"></div>' +
+        '<div data-type="NodeList" data-node-id="list-two"><div data-type="NodeListItem" data-node-id="item-two">' +
+        '<div data-type="NodeParagraph"><div contenteditable="true">第二章列表</div></div></div></div>';
     const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree,
         false, true, { headingListDepth: 2 });
     try {
         await settle();
         const ids = () => Array.from(env.panel.querySelectorAll<HTMLButtonElement>("button[data-id]"))
             .map(row => row.dataset.id);
-        assert.deepEqual(ids(), ["h1", "h3", "h6", "item", "h2"]);
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
+        assert.equal(env.panel.querySelector('[data-outline-toggle="h6"]')?.getAttribute("aria-expanded"), "false");
         env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!.click();
         assert.deepEqual(ids(), ["h1", "h2"]);
         assert.deepEqual(env.foldStates.doc1.collapsedIds, ["h1"]);
@@ -100,7 +104,7 @@ test("悬浮大纲增强：设置列表层级后直接显示列表并记住折�
         env.editors[0] = { ...env.editors[0], rootID: "doc2" };
         env.controller.syncEditors();
         await settle();
-        assert.deepEqual(ids(), ["h1", "h3", "h6", "item", "h2"]);
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
         env.editors[0] = { ...env.editors[0], rootID: "doc1" };
         env.controller.syncEditors();
         await settle();
@@ -116,12 +120,12 @@ test("悬浮大纲增强：设置列表层级后直接显示列表并记住折�
         keep.click();
         await settle();
         assert.equal(keep.getAttribute("aria-pressed"), "true");
-        assert.deepEqual(ids(), ["h1", "h3", "h6", "item", "h2"]);
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
         assert.deepEqual(env.foldStates.doc1.collapsedIds, []);
 
-        env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!.click();
-        env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!.click();
+        env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="h6"]')!.click();
         assert.deepEqual(ids(), ["h1", "h3", "h6", "item", "h2"]);
+        assert.deepEqual(env.foldStates.doc1.expandedListIds, ["h6"]);
     } finally { env.cleanup(); }
 });
 
@@ -311,6 +315,33 @@ test("页签正文中紧邻列表的段落作为列表父级，并将列表后�
     } finally { env.cleanup(); }
 });
 
+test("文档开头的页签标题默认可见，页签内容需单独展开", () => {
+    const env = setup();
+    try {
+        const entries = includeListsInHeadingTree([], tabsRoot("tabs",
+            tabDOM("tab-one", "第一页", listRoot(listDOM("item-one", "列表一")))), 2);
+        assert.deepEqual(filterHeadingListEntries(entries, false, new Set(), new Set()).visible.map(entry => entry.id),
+            ["tab-one"]);
+        assert.deepEqual(filterHeadingListEntries(entries, false, new Set(), new Set(["tab-one"]))
+            .visible.map(entry => entry.id), ["tab-one", "item-one"]);
+    } finally { env.cleanup(); }
+});
+
+test("保持当前层级展开时，文档开头的列表也能显示当前项", () => {
+    const env = setup();
+    try {
+        const entries = includeListsInHeadingTree([], listRoot(listDOM("one", "父项",
+            listRoot(listDOM("two", "子项")))), 2);
+        const collapsed = new Set(["one"]);
+        const expandedLists = new Set<string>();
+        assert.equal(expandCollapsedAncestors(entries, "two", collapsed, expandedLists, new Set()), true);
+        assert.deepEqual([...collapsed], []);
+        assert.deepEqual([...expandedLists], ["one"]);
+        assert.deepEqual(filterHeadingListEntries(entries, false, expandedLists, new Set())
+            .visible.map(entry => entry.id), ["one", "two"]);
+    } finally { env.cleanup(); }
+});
+
 test("悬浮大纲增强使用页签图标显示页签标题，且不打开列表插入菜单", async () => {
     const dom = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
         tabsRoot("tabs", tabDOM("tab-one", "实验数据", '<div data-type="NodeParagraph"><div contenteditable="true">正文不显示</div></div>'));
@@ -326,6 +357,68 @@ test("悬浮大纲增强使用页签图标显示页签标题，且不打开列�
         row.dispatchEvent(event);
         assert.equal(event.defaultPrevented, true);
         assert.equal(env.menus.length, 0);
+    } finally { env.cleanup(); }
+});
+
+test("悬浮大纲增强：页签标题默认折叠，可单独展开下级列表", async () => {
+    const dom = '<div data-type="NodeHeading" data-node-id="h1"></div>' + tabsRoot("tabs",
+        tabDOM("tab-one", "第一页", listRoot(listDOM("item-one", "列表一"))) +
+        tabDOM("tab-two", "第二页", listRoot(listDOM("item-two", "列表二"))));
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom } :
+        [{ id: "h1", name: "标题", subType: "h1" }], false, true, { headingListDepth: 2 });
+    try {
+        await settle();
+        const ids = () => Array.from(env.panel.querySelectorAll<HTMLButtonElement>("button[data-id]"))
+            .map(row => row.dataset.id);
+        const toggle = (id: string) => env.panel.querySelector<HTMLButtonElement>(`button[data-outline-toggle="${id}"]`)!;
+        assert.deepEqual(ids(), ["h1", "tab-one", "tab-two"]);
+        assert.equal(toggle("tab-one").getAttribute("aria-expanded"), "false");
+        assert.equal(toggle("tab-two").getAttribute("aria-expanded"), "false");
+
+        toggle("tab-one").click();
+        assert.deepEqual(ids(), ["h1", "tab-one", "item-one", "tab-two"]);
+        assert.deepEqual(env.foldStates.doc1.expandedTabIds, ["tab-one"]);
+        toggle("tab-one").click();
+        toggle("tab-two").click();
+        assert.deepEqual(ids(), ["h1", "tab-one", "tab-two", "item-two"]);
+    } finally { env.cleanup(); }
+});
+
+test("悬浮大纲增强：保持当前层级展开时，点击列表会显示其折叠祖先", async () => {
+    const dom = '<div data-type="NodeHeading" data-node-id="h1"><div contenteditable="true">标题</div></div>' +
+        listRoot(listDOM("one", "父项", listRoot(listDOM("two", "子项")))) +
+        tabsRoot("tabs", tabDOM("tab-one", "页签", listRoot(listDOM("tab-item", "页签列表"))));
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom } :
+        [{ id: "h1", name: "标题", subType: "h1" }], false, true, { headingListDepth: 3 });
+    try {
+        env.editors[0].content.innerHTML = dom;
+        await new Promise(resolve => setTimeout(resolve, 680));
+        const ids = () => Array.from(env.panel.querySelectorAll<HTMLButtonElement>("button[data-id]"))
+            .map(row => row.dataset.id);
+        const clickEditor = (id: string) => env.editors[0].content.querySelector<HTMLElement>(`[data-node-id="${id}"] [contenteditable]`)!
+            .dispatchEvent(new env.win.MouseEvent("click", { bubbles: true }));
+        assert.deepEqual(ids(), ["h1", "tab-one"]);
+
+        env.panel.querySelector<HTMLButtonElement>('button[aria-label="保存当前层级展开"]')!.click();
+        await settle();
+        clickEditor("h1");
+        const tabToggle = env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="tab-one"]');
+        if (tabToggle?.getAttribute("aria-expanded") === "true") tabToggle.click();
+        env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!.click();
+        assert.deepEqual(ids(), ["h1"]);
+        clickEditor("two");
+        assert.deepEqual(ids(), ["h1", "one", "two", "tab-one"]);
+        assert.equal(env.panel.querySelector(".list-outline-floating__current")?.getAttribute("data-id"), "two");
+
+        clickEditor("h1");
+        env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="one"]')!.click();
+        assert.deepEqual(ids(), ["h1", "one", "tab-one"]);
+        clickEditor("one");
+        assert.deepEqual(ids(), ["h1", "one", "two", "tab-one"]);
+
+        clickEditor("tab-item");
+        assert.deepEqual(ids(), ["h1", "one", "two", "tab-one", "tab-item"]);
+        assert.deepEqual(env.foldStates.doc1.expandedTabIds, ["tab-one"]);
     } finally { env.cleanup(); }
 });
 

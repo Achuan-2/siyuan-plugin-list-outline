@@ -1,5 +1,5 @@
-import { expandCollapsedAncestors, filterCollapsedEntries, findClosestHeadingOutlineTargetId, findEmbeddedOutlineTarget,
-    flattenHeadingTree, getCollapsibleEntryIds, getHeadingEntries, getHeadingOutlineTargetSelector, includeListsInHeadingTree,
+import { expandCollapsedAncestors, filterCollapsedEntries, filterHeadingListEntries, findClosestHeadingOutlineTargetId, findEmbeddedOutlineTarget,
+    flattenHeadingTree, getCollapsibleEntryIds, getEffectiveCollapsedIds, getHeadingOutlineTargetSelector, includeListsInHeadingTree,
     type HeadingEntry, type HeadingFoldState } from "./headingTree";
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import { createOutlineFoldButton, createOutlineRow, setOutlineCurrent } from "./outlineView";
@@ -59,6 +59,8 @@ export class HeadingOutlineController {
     private editor: HeadingEditor | null = null;
     private entries: HeadingEntry[] = [];
     private collapsedEntryIds = new Set<string>();
+    private expandedListEntryIds = new Set<string>();
+    private expandedTabIds = new Set<string>();
     private showListEntries = false;
     private keepCurrentExpandButton?: HTMLButtonElement;
     private currentEntryId = "";
@@ -163,6 +165,7 @@ export class HeadingOutlineController {
                 await this.options.setListDepth?.(depth);
                 if (!this.disposed) {
                     this.showListEntries = depth > 0;
+                    this.expandedTabIds.clear();
                     this.saveFoldState();
                     await this.refresh();
                 }
@@ -242,7 +245,9 @@ export class HeadingOutlineController {
         this.entries = [];
         const foldState = editor ? this.options.getFoldState?.(editor.rootID) : undefined;
         this.collapsedEntryIds = new Set(foldState?.collapsedIds || []);
-        this.showListEntries = this.settings.headingListDepth > 0;
+        this.expandedListEntryIds = new Set(foldState?.expandedListIds || []);
+        this.expandedTabIds = new Set(foldState?.expandedTabIds || []);
+        this.showListEntries = foldState?.showLists ?? false;
         this.currentEntryId = "";
         this.body.replaceChildren();
         this.status.textContent = "";
@@ -326,6 +331,8 @@ export class HeadingOutlineController {
         if (!this.editor || !this.options.saveFoldState) return;
         void this.options.saveFoldState(this.editor.rootID, {
             collapsedIds: [...this.collapsedEntryIds], showLists: this.showListEntries,
+            expandedListIds: [...this.expandedListEntryIds],
+            expandedTabIds: [...this.expandedTabIds],
         }).catch(error => {
             console.error("悬浮大纲增强：保存折叠状态失败", error);
             if (!this.disposed) this.options.reportError("大纲折叠状态保存失败，请重试。");
@@ -335,10 +342,18 @@ export class HeadingOutlineController {
     applyFoldState(documentId: string, state: HeadingFoldState) {
         if (this.editor?.rootID !== documentId || this.disposed) return;
         const collapsed = new Set(state.collapsedIds);
-        if (this.showListEntries === (this.settings.headingListDepth > 0) && collapsed.size === this.collapsedEntryIds.size &&
-            [...collapsed].every(id => this.collapsedEntryIds.has(id))) return;
+        const expandedLists = new Set(state.expandedListIds || []);
+        const expandedTabs = new Set(state.expandedTabIds || []);
+        if (this.showListEntries === state.showLists && collapsed.size === this.collapsedEntryIds.size &&
+            [...collapsed].every(id => this.collapsedEntryIds.has(id)) &&
+            expandedLists.size === this.expandedListEntryIds.size &&
+            [...expandedLists].every(id => this.expandedListEntryIds.has(id)) &&
+            expandedTabs.size === this.expandedTabIds.size &&
+            [...expandedTabs].every(id => this.expandedTabIds.has(id))) return;
         this.collapsedEntryIds = collapsed;
-        this.showListEntries = this.settings.headingListDepth > 0;
+        this.expandedListEntryIds = expandedLists;
+        this.expandedTabIds = expandedTabs;
+        this.showListEntries = state.showLists;
         this.render();
     }
 
@@ -357,6 +372,8 @@ export class HeadingOutlineController {
         const depth = this.settings.headingListDepth;
         if (Number(this.listDepthSelect.value) !== depth) {
             this.showListEntries = depth > 0;
+            this.expandedListEntryIds.clear();
+            this.expandedTabIds.clear();
             this.saveFoldState();
         }
         this.listDepthSelect.value = String(depth);
@@ -371,13 +388,20 @@ export class HeadingOutlineController {
     private render() {
         if (this.disposed) return;
         const fragment = document.createDocumentFragment();
-        const visibleTree = this.showListEntries ? this.entries : getHeadingEntries(this.entries);
-        const collapsibleIds = getCollapsibleEntryIds(visibleTree);
+        const { visible: visibleTree, listOwnerIds } = filterHeadingListEntries(this.entries,
+            this.showListEntries, this.expandedListEntryIds, this.expandedTabIds);
+        const visibleCollapsibleIds = getCollapsibleEntryIds(visibleTree);
+        const collapsibleIds = new Set(visibleCollapsibleIds);
         const allCollapsibleIds = getCollapsibleEntryIds(this.entries);
+        for (const id of listOwnerIds) if (allCollapsibleIds.has(id)) collapsibleIds.add(id);
+        for (const entry of visibleTree) {
+            if (entry.kind === "tab" && allCollapsibleIds.has(entry.id)) collapsibleIds.add(entry.id);
+        }
         for (const id of this.collapsedEntryIds) {
             if (!allCollapsibleIds.has(id)) this.collapsedEntryIds.delete(id);
         }
-        for (const entry of filterCollapsedEntries(visibleTree, this.collapsedEntryIds)) {
+        const effectiveCollapsedIds = getEffectiveCollapsedIds(visibleTree, this.collapsedEntryIds, this.expandedTabIds);
+        for (const entry of filterCollapsedEntries(visibleTree, effectiveCollapsedIds)) {
             const container = document.createElement("div");
             container.className = "heading-outline-floating__entry";
             container.style.setProperty("--outline-indent", `${10 + (entry.depth - 1) * 14}px`);
@@ -404,7 +428,8 @@ export class HeadingOutlineController {
             icon.append(use);
             row.insertBefore(icon, row.lastChild);
             if (collapsibleIds.has(entry.id)) {
-                container.append(createOutlineFoldButton(entry, !this.collapsedEntryIds.has(entry.id),
+                const expanded = !effectiveCollapsedIds.has(entry.id) && visibleCollapsibleIds.has(entry.id);
+                container.append(createOutlineFoldButton(entry, expanded,
                     "heading-outline-floating__fold"));
             }
             container.append(row);
@@ -433,8 +458,24 @@ export class HeadingOutlineController {
             event.preventDefault();
             event.stopPropagation();
             const id = toggle.dataset.outlineToggle!;
-            if (this.collapsedEntryIds.has(id)) this.collapsedEntryIds.delete(id);
-            else this.collapsedEntryIds.add(id);
+            const entry = this.entries.find(item => item.id === id);
+            if (entry?.kind === "tab") {
+                if (this.expandedTabIds.has(id)) this.expandedTabIds.delete(id);
+                else this.expandedTabIds.add(id);
+                this.collapsedEntryIds.delete(id);
+                this.saveFoldState();
+                this.render();
+                return;
+            }
+            const { visible, listOwnerIds } = filterHeadingListEntries(this.entries,
+                this.showListEntries, this.expandedListEntryIds, this.expandedTabIds);
+            if (this.collapsedEntryIds.has(id)) {
+                this.collapsedEntryIds.delete(id);
+                if (listOwnerIds.has(id)) this.expandedListEntryIds.add(id);
+            } else if (!this.showListEntries && listOwnerIds.has(id) &&
+                !getCollapsibleEntryIds(visible).has(id)) {
+                this.expandedListEntryIds.add(id);
+            } else this.collapsedEntryIds.add(id);
             this.saveFoldState();
             this.render();
             return;
@@ -755,7 +796,8 @@ export class HeadingOutlineController {
     private setCurrent(id: string) {
         this.currentEntryId = id && this.entries.some(entry => entry.id === id) ? id : "";
         if (this.currentEntryId && this.settings.keepCurrentHeadingExpanded &&
-            expandCollapsedAncestors(this.entries, this.currentEntryId, this.collapsedEntryIds)) {
+            expandCollapsedAncestors(this.entries, this.currentEntryId, this.collapsedEntryIds,
+                this.expandedListEntryIds, this.expandedTabIds)) {
             this.saveFoldState();
             this.render();
             return;

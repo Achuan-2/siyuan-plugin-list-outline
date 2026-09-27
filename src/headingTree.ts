@@ -23,22 +23,82 @@ export interface HeadingEntry extends OutlineEntry {
 export interface HeadingFoldState {
     collapsedIds: string[];
     showLists: boolean;
+    expandedListIds?: string[];
+    expandedTabIds?: string[];
 }
 
 export function getHeadingEntries(entries: HeadingEntry[]): HeadingEntry[] {
     return entries.filter(entry => !entry.kind || entry.kind === "heading");
 }
 
-export function expandCollapsedAncestors(entries: HeadingEntry[], id: string, collapsedIds: Set<string>): boolean {
+/** 标题和页签标题默认可见；列表由所属标题、页签或“全部展开”控制。 */
+export function filterHeadingListEntries(entries: HeadingEntry[], showLists: boolean,
+    expandedListIds: ReadonlySet<string>, expandedTabIds: ReadonlySet<string>):
+    { visible: HeadingEntry[]; listOwnerIds: Set<string> } {
+    const visible: HeadingEntry[] = [];
+    const listOwnerIds = new Set<string>();
+    const stack: Array<{ entry: HeadingEntry; visible: boolean }> = [];
+    for (const entry of entries) {
+        while (stack.length && stack[stack.length - 1].entry.depth >= entry.depth) stack.pop();
+        const parentVisible = stack.length ? stack[stack.length - 1].visible : true;
+        let owner: HeadingEntry | undefined;
+        let tab: HeadingEntry | undefined;
+        for (let index = stack.length - 1; index >= 0; index--) {
+            const ancestor = stack[index].entry;
+            if (!owner && (!ancestor.kind || ancestor.kind === "heading")) owner = ancestor;
+            if (!tab && ancestor.kind === "tab") tab = ancestor;
+            if (owner && tab) break;
+        }
+        let isVisible: boolean;
+        if (!entry.kind || entry.kind === "heading") {
+            isVisible = true;
+        } else if (entry.kind === "tab") {
+            isVisible = parentVisible;
+        } else {
+            if (owner && !tab) listOwnerIds.add(owner.id);
+            const rootOwner = !owner && !tab ? stack[0]?.entry || entry : undefined;
+            isVisible = parentVisible && (showLists || !!(owner && expandedListIds.has(owner.id)) ||
+                !!(tab && expandedTabIds.has(tab.id)) || !!(rootOwner && expandedListIds.has(rootOwner.id)));
+        }
+        if (isVisible) visible.push(entry);
+        stack.push({ entry, visible: isVisible });
+    }
+    return { visible, listOwnerIds };
+}
+
+export function expandCollapsedAncestors(entries: HeadingEntry[], id: string, collapsedIds: Set<string>,
+    expandedListIds?: Set<string>, expandedTabIds?: Set<string>): boolean {
     const index = entries.findIndex(entry => entry.id === id);
     if (index < 0) return false;
     let depth = entries[index].depth;
     let changed = false;
+    let nearestHeading: HeadingEntry | undefined;
+    let hasTabAncestor = false;
+    let rootAncestor: HeadingEntry | undefined;
     for (let position = index - 1; position >= 0 && depth > 1; position--) {
         const entry = entries[position];
         if (entry.depth >= depth) continue;
         changed = collapsedIds.delete(entry.id) || changed;
+        if (!nearestHeading && (!entry.kind || entry.kind === "heading")) nearestHeading = entry;
+        if (entry.kind === "tab") {
+            hasTabAncestor = true;
+            if (expandedTabIds && !expandedTabIds.has(entry.id)) {
+                expandedTabIds.add(entry.id);
+                changed = true;
+            }
+        }
+        rootAncestor = entry;
         depth = entry.depth;
+    }
+    const current = entries[index];
+    if (current.kind === "list") changed = collapsedIds.delete(current.id) || changed;
+    if (expandedListIds && current.kind && current.kind !== "tab" &&
+        (!hasTabAncestor || (!nearestHeading && rootAncestor?.kind !== "tab"))) {
+        const ownerId = nearestHeading?.id || rootAncestor?.id || current.id;
+        if (!expandedListIds.has(ownerId)) {
+            expandedListIds.add(ownerId);
+            changed = true;
+        }
     }
     return changed;
 }
@@ -62,16 +122,29 @@ export function findClosestHeadingOutlineTargetId(element: Element, root: Elemen
     return "";
 }
 
-/** 标题、段落和列表项可以收起它们后方、层级更深的连续条目。 */
+/** 有下级大纲条目的标题、段落、列表项和页签项可以单独折叠。 */
 export function getCollapsibleEntryIds(entries: HeadingEntry[]): Set<string> {
     const ids = new Set<string>();
     for (let index = 0; index < entries.length - 1; index++) {
         const entry = entries[index];
         const supportsCollapse = !entry.kind || entry.kind === "heading" ||
-            entry.kind === "paragraph" || entry.kind === "list";
+            entry.kind === "paragraph" || entry.kind === "list" || entry.kind === "tab";
         if (supportsCollapse && entries[index + 1].depth > entry.depth) ids.add(entry.id);
     }
     return ids;
+}
+
+/** 页签正文默认收起；显式展开的页签才从折叠集合中移除。 */
+export function getEffectiveCollapsedIds(entries: HeadingEntry[], collapsedIds: ReadonlySet<string>,
+    expandedTabIds: ReadonlySet<string>): Set<string> {
+    const effective = new Set(collapsedIds);
+    const collapsibleIds = getCollapsibleEntryIds(entries);
+    for (const entry of entries) {
+        if (entry.kind === "tab" && collapsibleIds.has(entry.id) && !expandedTabIds.has(entry.id)) {
+            effective.add(entry.id);
+        }
+    }
+    return effective;
 }
 
 /** 从扁平大纲中过滤掉已折叠条目的所有后代，遇到同级或更高层级时恢复显示。 */
