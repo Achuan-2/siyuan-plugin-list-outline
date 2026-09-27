@@ -5,10 +5,12 @@ import { normalizeSettings, type OutlineSettings } from "./defaultSettings";
 import { ListOutlineController } from "./listOutline";
 import { HeadingOutlineController, type HeadingEditor } from "./headingOutline";
 import { HeadingOutlineDockView, type OpenHeadingLevelMenu } from "./headingDock";
+import type { HeadingFoldState } from "./headingTree";
 import { HEADING_OUTLINE_ICON, HEADING_OUTLINE_ICON_ID } from "./icons";
 import { insertOutlineSibling, insertIntoOutlineEditor, type OutlineInsertTarget, type OpenInsertMenu } from "./outlineInsert";
 
 const SETTINGS_FILE = "settings.json";
+const HEADING_FOLDS_FILE = "heading-folds.json";
 const HEADING_LEVEL_LABELS = ["一级标题块", "二级标题块", "三级标题块", "四级标题块", "五级标题块", "六级标题块"];
 
 export default class ListOutlinePlugin extends Plugin {
@@ -18,6 +20,8 @@ export default class ListOutlinePlugin extends Plugin {
     private headingDock?: HeadingOutlineDockView;
     private disposed = false;
     private settingsQueue: Promise<unknown> = Promise.resolve();
+    private headingFoldQueue: Promise<unknown> = Promise.resolve();
+    private headingFoldStates: Record<string, HeadingFoldState> = {};
     private dialogs = new Set<Dialog>();
     private insertMenu?: Menu;
     private headingLevelMenu?: Menu;
@@ -42,6 +46,11 @@ export default class ListOutlinePlugin extends Plugin {
                     getEditors: this.getHeadingEditors,
                     getSettings: () => this.settings,
                     setListDepth: depth => this.saveSettings({ ...this.settings, headingListDepth: depth }),
+                    setKeepCurrentHeadingExpanded: enabled => this.saveSettings({
+                        ...this.settings, keepCurrentHeadingExpanded: enabled,
+                    }),
+                    getFoldState: documentId => this.headingFoldStates[documentId],
+                    saveFoldState: this.saveHeadingFoldState,
                     openInsertMenu: this.openInsertMenu,
                     openHeadingLevelMenu: this.openHeadingLevelMenu,
                     isMobile: () => getFrontend().includes("mobile"),
@@ -94,6 +103,20 @@ export default class ListOutlinePlugin extends Plugin {
             this.settings = normalizeSettings(await this.loadData(SETTINGS_FILE) || {});
         } catch (error) {
             console.error("列表大纲：加载设置失败", error);
+        }
+        try {
+            const stored = await this.loadData(HEADING_FOLDS_FILE);
+            if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+                for (const [documentId, value] of Object.entries(stored)) {
+                    if (!value || typeof value !== "object" || !Array.isArray((value as HeadingFoldState).collapsedIds)) continue;
+                    this.headingFoldStates[documentId] = {
+                        collapsedIds: (value as HeadingFoldState).collapsedIds.filter(id => typeof id === "string"),
+                        showLists: (value as HeadingFoldState).showLists === true,
+                    };
+                }
+            }
+        } catch (error) {
+            console.error("列表大纲：加载标题折叠状态失败", error);
         }
         if (this.disposed) return;
 
@@ -180,6 +203,11 @@ export default class ListOutlinePlugin extends Plugin {
             renderMath: element => ProtyleMethod.mathRender(element),
             getSettings: () => this.settings,
             setListDepth: depth => this.saveSettings({ ...this.settings, headingListDepth: depth }),
+            setKeepCurrentHeadingExpanded: enabled => this.saveSettings({
+                ...this.settings, keepCurrentHeadingExpanded: enabled,
+            }),
+            getFoldState: documentId => this.headingFoldStates[documentId],
+            saveFoldState: this.saveHeadingFoldState,
             openInsertMenu: this.openInsertMenu,
             request: this.request,
             navigate: (id, folded) => {
@@ -228,6 +256,16 @@ export default class ListOutlinePlugin extends Plugin {
         await save;
         return next;
     }
+
+    private saveHeadingFoldState = (documentId: string, state: HeadingFoldState): Promise<unknown> => {
+        this.headingFoldStates[documentId] = state;
+        this.headingDock?.applyFoldState(documentId, state);
+        this.headingOutline?.applyFoldState(documentId, state);
+        const snapshot = { ...this.headingFoldStates };
+        const save = this.headingFoldQueue.then(() => this.saveData(HEADING_FOLDS_FILE, snapshot));
+        this.headingFoldQueue = save.catch(() => {});
+        return save;
+    };
 
     private canInsert(target: OutlineInsertTarget) {
         const headingAvailable = this.settings.enableHeadingOutline || this.settings.enableHeadingDock;

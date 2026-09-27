@@ -20,6 +20,29 @@ export interface HeadingEntry extends OutlineEntry {
     embedId?: string;
 }
 
+export interface HeadingFoldState {
+    collapsedIds: string[];
+    showLists: boolean;
+}
+
+export function getHeadingEntries(entries: HeadingEntry[]): HeadingEntry[] {
+    return entries.filter(entry => !entry.kind || entry.kind === "heading");
+}
+
+export function expandCollapsedAncestors(entries: HeadingEntry[], id: string, collapsedIds: Set<string>): boolean {
+    const index = entries.findIndex(entry => entry.id === id);
+    if (index < 0) return false;
+    let depth = entries[index].depth;
+    let changed = false;
+    for (let position = index - 1; position >= 0 && depth > 1; position--) {
+        const entry = entries[position];
+        if (entry.depth >= depth) continue;
+        changed = collapsedIds.delete(entry.id) || changed;
+        depth = entry.depth;
+    }
+    return changed;
+}
+
 export function getHeadingOutlineTargetSelector(preview: boolean): string {
     return preview
         ? "h1[id],h2[id],h3[id],h4[id],h5[id],h6[id],li[id],p[id]"

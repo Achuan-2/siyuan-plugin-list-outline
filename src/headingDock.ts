@@ -1,6 +1,6 @@
-import { filterCollapsedEntries, findClosestHeadingOutlineTargetId, findEmbeddedOutlineTarget,
-    flattenHeadingTree, getCollapsibleEntryIds, getHeadingOutlineTargetSelector, includeListsInHeadingTree,
-    type HeadingEntry } from "./headingTree";
+import { expandCollapsedAncestors, filterCollapsedEntries, findClosestHeadingOutlineTargetId, findEmbeddedOutlineTarget,
+    flattenHeadingTree, getCollapsibleEntryIds, getHeadingEntries, getHeadingOutlineTargetSelector, includeListsInHeadingTree,
+    type HeadingEntry, type HeadingFoldState } from "./headingTree";
 import { getDefaultSettings, MAX_DEPTH, type OutlineSettings } from "./defaultSettings";
 import type { HeadingEditor } from "./headingOutline";
 import type { OpenInsertMenu } from "./outlineInsert";
@@ -23,6 +23,9 @@ export interface HeadingDockOptions {
     openHeadingLevelMenu?: OpenHeadingLevelMenu;
     getSettings?(): OutlineSettings;
     setListDepth?(depth: number): Promise<unknown>;
+    setKeepCurrentHeadingExpanded?(enabled: boolean): Promise<unknown>;
+    getFoldState?(documentId: string): HeadingFoldState | undefined;
+    saveFoldState?(documentId: string, state: HeadingFoldState): Promise<unknown>;
     isMobile?(): boolean;
     newNodeID?(): string;
     renderMath?(element: HTMLElement): void;
@@ -75,6 +78,8 @@ export class HeadingOutlineDockView {
     private currentEntryId = "";
     private collapsedEntryIds = new Set<string>();
     private expandedHeadingLevel = 6;
+    private showListEntries = false;
+    private keepCurrentExpandButton?: HTMLButtonElement;
     private searchQuery = "";
     private version = 0;
     private timer?: ReturnType<typeof setTimeout>;
@@ -115,8 +120,13 @@ export class HeadingOutlineDockView {
         this.listDepthSelect.addEventListener("change", async () => {
             this.listDepthSelect.disabled = true;
             try {
-                await this.options.setListDepth?.(Number(this.listDepthSelect.value));
-                if (!this.disposed) await this.refresh();
+                const depth = Number(this.listDepthSelect.value);
+                await this.options.setListDepth?.(depth);
+                if (!this.disposed) {
+                    this.showListEntries = depth > 0;
+                    this.saveFoldState();
+                    await this.refresh();
+                }
             } catch (error) {
                 if (!this.disposed) this.options.reportError("列表层级设置保存失败，请重试。");
             } finally {
@@ -125,6 +135,22 @@ export class HeadingOutlineDockView {
             }
         });
 
+        this.keepCurrentExpandButton = createToolbarButton("保存当前层级展开", "iconFocus", "keep-current-expand", async () => {
+            const enabled = !this.settings.keepCurrentHeadingExpanded;
+            this.keepCurrentExpandButton!.disabled = true;
+            try {
+                await this.options.setKeepCurrentHeadingExpanded?.(enabled);
+                if (!this.disposed) {
+                    this.syncKeepCurrentExpandButton();
+                    if (enabled) this.highlight(true, true);
+                }
+            } catch (error) {
+                if (!this.disposed) this.options.reportError("保存当前层级展开设置失败，请重试。");
+            } finally {
+                if (!this.disposed) this.keepCurrentExpandButton!.disabled = false;
+            }
+        });
+        this.syncKeepCurrentExpandButton();
         const expandLevelBtn = createToolbarButton("展开标题层级", "iconExpandLevel", "expand-level", (button, event) => {
             // 思源会在全局 click 处理器中关闭菜单；阻止本次点击继续冒泡，
             // 否则刚打开的标题层级菜单会在同一次点击中立即被关闭。
@@ -142,7 +168,7 @@ export class HeadingOutlineDockView {
         minimizeBtn.dataset.type = "min";
 
         this.header.append(logo, space);
-        this.header.append(expandLevelBtn, expandAllBtn, collapseAllBtn, refreshBtn);
+        this.header.append(this.keepCurrentExpandButton, expandLevelBtn, expandAllBtn, collapseAllBtn, refreshBtn);
         if (!this.options.isMobile?.()) this.header.append(minimizeBtn);
 
         this.documentTitle.type = "button";
@@ -268,7 +294,9 @@ export class HeadingOutlineDockView {
         this.renderDocumentTitle();
         this.entries = [];
         this.currentEntryId = "";
-        this.collapsedEntryIds.clear();
+        const foldState = editor ? this.options.getFoldState?.(editor.rootID) : undefined;
+        this.collapsedEntryIds = new Set(foldState?.collapsedIds || []);
+        this.showListEntries = foldState?.showLists ?? false;
         this.body.replaceChildren();
         this.body.removeAttribute("data-loading");
         this.status.textContent = "";
@@ -333,7 +361,13 @@ export class HeadingOutlineDockView {
     }
 
     refreshSettings() {
-        this.listDepthSelect.value = String(this.settings.headingListDepth);
+        this.syncKeepCurrentExpandButton();
+        const depth = this.settings.headingListDepth;
+        if (Number(this.listDepthSelect.value) !== depth) {
+            this.showListEntries = depth > 0;
+            this.saveFoldState();
+        }
+        this.listDepthSelect.value = String(depth);
         if (this.settings.headingListDepth === 0) {
             this.entries = this.entries.filter(entry => !["paragraph", "list", "tab"].includes(entry.kind || ""));
             this.render();
@@ -343,11 +377,14 @@ export class HeadingOutlineDockView {
 
     private expandAll() {
         this.collapsedEntryIds.clear();
+        this.showListEntries = true;
+        this.saveFoldState();
         this.render();
     }
 
     private collapseAll() {
         this.collapsedEntryIds = getCollapsibleEntryIds(this.entries);
+        this.saveFoldState();
         this.render();
     }
 
@@ -355,6 +392,13 @@ export class HeadingOutlineDockView {
     private expandToHeadingLevel(targetLevel: number) {
         const level = Math.max(1, Math.min(6, Math.trunc(targetLevel)));
         this.expandedHeadingLevel = level;
+        this.showListEntries = true;
+        this.collapseToHeadingLevel(level);
+        this.saveFoldState();
+        this.render();
+    }
+
+    private collapseToHeadingLevel(level: number) {
         this.collapsedEntryIds.clear();
         if (level < 6) {
             const collapsibleIds = getCollapsibleEntryIds(this.entries);
@@ -365,6 +409,33 @@ export class HeadingOutlineDockView {
                 }
             }
         }
+    }
+
+    private syncKeepCurrentExpandButton() {
+        const button = this.keepCurrentExpandButton;
+        if (!button) return;
+        const enabled = this.settings.keepCurrentHeadingExpanded;
+        button.classList.toggle("block__icon--active", enabled);
+        button.setAttribute("aria-pressed", String(enabled));
+    }
+
+    private saveFoldState() {
+        if (!this.editor || !this.options.saveFoldState) return;
+        void this.options.saveFoldState(this.editor.rootID, {
+            collapsedIds: [...this.collapsedEntryIds], showLists: this.showListEntries,
+        }).catch(error => {
+            console.error("大纲增强 Dock：保存折叠状态失败", error);
+            if (!this.disposed) this.options.reportError("大纲折叠状态保存失败，请重试。");
+        });
+    }
+
+    applyFoldState(documentId: string, state: HeadingFoldState) {
+        if (this.editor?.rootID !== documentId || this.disposed) return;
+        const collapsed = new Set(state.collapsedIds);
+        if (this.showListEntries === state.showLists && collapsed.size === this.collapsedEntryIds.size &&
+            [...collapsed].every(id => this.collapsedEntryIds.has(id))) return;
+        this.collapsedEntryIds = collapsed;
+        this.showListEntries = state.showLists;
         this.render();
     }
 
@@ -387,13 +458,15 @@ export class HeadingOutlineDockView {
         }
 
         const query = this.searchQuery.toLowerCase();
-        const collapsibleIds = getCollapsibleEntryIds(this.entries);
+        const visibleTree = this.showListEntries ? this.entries : getHeadingEntries(this.entries);
+        const collapsibleIds = getCollapsibleEntryIds(visibleTree);
+        const allCollapsibleIds = getCollapsibleEntryIds(this.entries);
         for (const id of this.collapsedEntryIds) {
-            if (!collapsibleIds.has(id)) this.collapsedEntryIds.delete(id);
+            if (!allCollapsibleIds.has(id)) this.collapsedEntryIds.delete(id);
         }
         const filteredEntries = query
             ? this.entries.filter(e => e.text.toLowerCase().includes(query))
-            : filterCollapsedEntries(this.entries, this.collapsedEntryIds);
+            : filterCollapsedEntries(visibleTree, this.collapsedEntryIds);
 
         if (!this.entries.length) {
             this.status.textContent = this.status.textContent || "当前文档暂无标题";
@@ -403,7 +476,7 @@ export class HeadingOutlineDockView {
         }
 
         if (!filteredEntries.length) {
-            this.status.textContent = "无匹配结果";
+            this.status.textContent = query ? "无匹配结果" : "当前文档暂无标题";
             this.status.hidden = false;
             this.body.replaceChildren();
             return;
@@ -472,6 +545,7 @@ export class HeadingOutlineDockView {
             const id = toggle.dataset.outlineToggle!;
             if (this.collapsedEntryIds.has(id)) this.collapsedEntryIds.delete(id);
             else this.collapsedEntryIds.add(id);
+            this.saveFoldState();
             this.render();
             return;
         }
@@ -723,6 +797,12 @@ export class HeadingOutlineDockView {
         if (resolveCurrent || !current) {
             current = this.resolveCurrentID(ids);
             this.currentEntryId = current;
+        }
+        if (current && this.settings.keepCurrentHeadingExpanded &&
+            expandCollapsedAncestors(this.entries, current, this.collapsedEntryIds)) {
+            this.saveFoldState();
+            this.render();
+            return;
         }
         let currentRow: HTMLElement | null = null;
         this.body.querySelectorAll<HTMLElement>("button[data-id]").forEach(row => {

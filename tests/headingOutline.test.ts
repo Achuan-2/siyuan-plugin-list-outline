@@ -11,7 +11,7 @@ const tree = [{ id: "h1", name: "<strong>一级标题</strong>", subType: "h1", 
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
 
 function setup(request?: (url: string, data: Record<string, unknown>) => Promise<any>, mobile = false,
-    withEditor = true) {
+    withEditor = true, initialSettings: Parameters<typeof normalizeSettings>[0] = {}) {
     const dom = new JSDOM('<div class="protyle"><div class="protyle-content"><div class="protyle-wysiwyg"><div data-type="NodeHeading" data-node-id="h1"><div contenteditable="true">标题</div></div></div></div></div>', { pretendToBeVisual: true });
     const win = dom.window;
     for (const key of ["window", "document", "Element", "Node", "HTMLElement", "DOMParser", "MutationObserver"]) {
@@ -28,18 +28,25 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     const calls: { url: string; data: Record<string, unknown> }[] = [];
     const navigations: { id: string; folded: boolean }[] = [];
     const menus: any[] = [];
-    let settings = normalizeSettings();
+    let settings = normalizeSettings(initialSettings);
+    const foldStates: Record<string, { collapsedIds: string[]; showLists: boolean }> = {};
     const controller = new HeadingOutlineController({ getEditors: () => editors,
         isMobile: () => mobile,
         newNodeID: () => "new-child-list",
         getSettings: () => settings,
         setListDepth: async depth => { settings = { ...settings, headingListDepth: depth }; },
+        setKeepCurrentHeadingExpanded: async enabled => {
+            settings = { ...settings, keepCurrentHeadingExpanded: enabled };
+            controller.refreshSettings();
+        },
+        getFoldState: documentId => foldStates[documentId],
+        saveFoldState: async (documentId, state) => { foldStates[documentId] = state; },
         request: async (url, data) => { calls.push({ url, data }); return request ? request(url, data) : url.endsWith("checkBlockFold") ? { isFolded: true } : tree; },
         navigate: (id, folded) => navigations.push({ id, folded }), reportError: () => {},
         openInsertMenu: (event, target) => { event.preventDefault(); menus.push(target); },
     });
     const panel = win.document.querySelector<HTMLElement>('.heading-outline-floating')!;
-    return { win, editors, initialEditor, calls, navigations, transactions, menus, controller, panel,
+    return { win, editors, initialEditor, calls, navigations, transactions, menus, controller, panel, foldStates,
         setSettings: (value: Parameters<typeof normalizeSettings>[0]) => { settings = normalizeSettings(value); controller.refreshSettings(); },
         cleanup: () => { controller.destroy(); win.close(); } };
 }
@@ -69,6 +76,48 @@ test("悬浮大纲增强：无文档启动和定时同步不报错，打开再�
         await settle();
         assert.equal(env.panel.hidden, false);
         assert.equal(env.panel.querySelectorAll("button[data-id]").length, 4);
+    } finally { env.cleanup(); }
+});
+
+test("悬浮大纲增强：首次仅显示标题并记住折叠，开启按钮展开当前标题", async () => {
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        '<div data-type="NodeHeading" data-node-id="h3"></div>' +
+        '<div data-type="NodeHeading" data-node-id="h6"></div>' +
+        '<div data-type="NodeList" data-node-id="list"><div data-type="NodeListItem" data-node-id="item">' +
+        '<div data-type="NodeParagraph"><div contenteditable="true">列表项</div></div></div></div>' +
+        '<div data-type="NodeHeading" data-node-id="h2"></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree,
+        false, true, { headingListDepth: 2 });
+    try {
+        await settle();
+        const ids = () => Array.from(env.panel.querySelectorAll<HTMLButtonElement>("button[data-id]"))
+            .map(row => row.dataset.id);
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
+        env.panel.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!.click();
+        assert.deepEqual(ids(), ["h1", "h2"]);
+        assert.deepEqual(env.foldStates.doc1.collapsedIds, ["h1"]);
+
+        env.editors[0] = { ...env.editors[0], rootID: "doc2" };
+        env.controller.syncEditors();
+        await settle();
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
+        env.editors[0] = { ...env.editors[0], rootID: "doc1" };
+        env.controller.syncEditors();
+        await settle();
+        assert.deepEqual(ids(), ["h1", "h2"]);
+
+        const current = env.win.document.createElement("div");
+        current.dataset.type = "NodeHeading";
+        current.dataset.nodeId = "h6";
+        env.editors[0].content.append(current);
+        current.click();
+        const keep = env.panel.querySelector<HTMLButtonElement>('button[aria-label="保存当前层级展开"]')!;
+        assert.equal(keep.getAttribute("aria-pressed"), "false");
+        keep.click();
+        await settle();
+        assert.equal(keep.getAttribute("aria-pressed"), "true");
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
+        assert.deepEqual(env.foldStates.doc1.collapsedIds, []);
     } finally { env.cleanup(); }
 });
 

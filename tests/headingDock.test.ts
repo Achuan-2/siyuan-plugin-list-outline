@@ -13,7 +13,7 @@ const tree = [{ id: "h1", name: "<strong>一级标题</strong>", subType: "h1", 
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
 
 function setup(request?: (url: string, data: Record<string, unknown>) => Promise<any>, mobile = false,
-    withEditor = true) {
+    withEditor = true, initialSettings: Parameters<typeof normalizeSettings>[0] = {}) {
     const dom = new JSDOM('<div class="protyle"><div class="protyle-content"><div class="protyle-wysiwyg"><div data-type="NodeHeading" data-node-id="h1"><div contenteditable="true">标题</div></div></div></div></div>', { pretendToBeVisual: true });
     const win = dom.window;
     for (const key of ["window", "document", "Element", "Node", "HTMLElement", "DOMParser", "MutationObserver"]) {
@@ -37,7 +37,8 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     if (!withEditor) editors.length = 0;
     const menus: any[] = [];
     const levelMenus: { currentLevel: number; selectLevel(level: number): void }[] = [];
-    let settings = normalizeSettings({ enableHeadingDock: true });
+    let settings = normalizeSettings({ enableHeadingDock: true, ...initialSettings });
+    const foldStates: Record<string, { collapsedIds: string[]; showLists: boolean }> = {};
 
     const container = win.document.createElement("div");
     win.document.body.append(container);
@@ -46,6 +47,12 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
         getEditors: () => editors,
         getSettings: () => settings,
         setListDepth: async depth => { settings = { ...settings, headingListDepth: depth }; },
+        setKeepCurrentHeadingExpanded: async enabled => {
+            settings = { ...settings, keepCurrentHeadingExpanded: enabled };
+            dock.refreshSettings();
+        },
+        getFoldState: documentId => foldStates[documentId],
+        saveFoldState: async (documentId, state) => { foldStates[documentId] = state; },
         request: async (url, data) => {
             calls.push({ url, data });
             return request ? request(url, data) : url.endsWith("checkBlockFold") ? { isFolded: true } : tree;
@@ -59,7 +66,7 @@ function setup(request?: (url: string, data: Record<string, unknown>) => Promise
     });
 
     return {
-        win, editors, calls, navigations, transactions, menus, levelMenus, dock, container,
+        win, editors, calls, navigations, transactions, menus, levelMenus, dock, container, foldStates,
         setSettings: (value: Parameters<typeof normalizeSettings>[0]) => {
             settings = normalizeSettings(value);
             dock.refreshSettings();
@@ -458,6 +465,57 @@ test("大纲增强 Dock：支持全部折叠、全部展开和按实际标题级
         assert.equal(env.levelMenus.at(-1)?.currentLevel, 3);
         env.levelMenus.at(-1)!.selectLevel(4);
         assert.deepEqual(visibleIds(), ["h1", "h3", "h6", "h2"]);
+    } finally { env.cleanup(); }
+});
+
+test("大纲增强 Dock：首次仅显示标题，按文档记住折叠并自动展开当前标题", async () => {
+    const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
+        '<div data-type="NodeHeading" data-node-id="h3"></div>' +
+        '<div data-type="NodeHeading" data-node-id="h6"></div>' +
+        '<div data-type="NodeList" data-node-id="list"><div data-type="NodeListItem" data-node-id="item">' +
+        '<div data-type="NodeParagraph"><div contenteditable="true">列表项</div></div></div></div>' +
+        '<div data-type="NodeHeading" data-node-id="h2"></div>';
+    const env = setup(async url => url.endsWith("getBlockDOM") ? { dom: snapshot } : tree,
+        false, true, { headingListDepth: 2 });
+    try {
+        await settle();
+        const ids = () => Array.from(env.container.querySelectorAll<HTMLButtonElement>("button[data-id]"))
+            .map(row => row.dataset.id);
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
+        assert.equal(env.foldStates.doc1, undefined);
+
+        env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!.click();
+        assert.deepEqual(ids(), ["h1", "h2"]);
+        assert.deepEqual(env.foldStates.doc1.collapsedIds, ["h1"]);
+        assert.equal(env.foldStates.doc1.showLists, false);
+
+        env.editors[0] = { ...env.editors[0], rootID: "doc2" };
+        env.dock.syncEditors();
+        await settle();
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
+        env.editors[0] = { ...env.editors[0], rootID: "doc1" };
+        env.dock.syncEditors();
+        await settle();
+        assert.deepEqual(ids(), ["h1", "h2"]);
+
+        const current = env.win.document.createElement("div");
+        current.dataset.type = "NodeHeading";
+        current.dataset.nodeId = "h6";
+        env.editors[0].content.append(current);
+        current.click();
+        assert.deepEqual(ids(), ["h1", "h2"]);
+
+        const keep = env.container.querySelector<HTMLButtonElement>('button[data-action="keep-current-expand"]')!;
+        assert.equal(keep.getAttribute("aria-pressed"), "false");
+        keep.click();
+        await settle();
+        assert.equal(keep.getAttribute("aria-pressed"), "true");
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
+        assert.deepEqual(env.foldStates.doc1.collapsedIds, []);
+
+        env.container.querySelector<HTMLButtonElement>('button[data-action="expand-all"]')!.click();
+        assert.ok(ids().includes("item"));
+        assert.equal(env.foldStates.doc1.showLists, true);
     } finally { env.cleanup(); }
 });
 
