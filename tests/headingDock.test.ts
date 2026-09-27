@@ -468,7 +468,7 @@ test("大纲增强 Dock：支持全部折叠、全部展开和按实际标题级
     } finally { env.cleanup(); }
 });
 
-test("大纲增强 Dock：首次仅显示标题，按文档记住折叠并自动展开当前标题", async () => {
+test("大纲增强 Dock：设置列表层级后直接显示列表，按文档记住折叠并自动展开当前标题", async () => {
     const snapshot = '<div data-type="NodeHeading" data-node-id="h1"></div>' +
         '<div data-type="NodeHeading" data-node-id="h3"></div>' +
         '<div data-type="NodeHeading" data-node-id="h6"></div>' +
@@ -481,18 +481,20 @@ test("大纲增强 Dock：首次仅显示标题，按文档记住折叠并自动
         await settle();
         const ids = () => Array.from(env.container.querySelectorAll<HTMLButtonElement>("button[data-id]"))
             .map(row => row.dataset.id);
-        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "item", "h2"]);
         assert.equal(env.foldStates.doc1, undefined);
 
         env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!.click();
         assert.deepEqual(ids(), ["h1", "h2"]);
         assert.deepEqual(env.foldStates.doc1.collapsedIds, ["h1"]);
-        assert.equal(env.foldStates.doc1.showLists, false);
+        assert.equal(env.foldStates.doc1.showLists, true);
+        // 旧版本保存的 showLists=false 不应覆盖当前列表层级设置。
+        env.foldStates.doc1.showLists = false;
 
         env.editors[0] = { ...env.editors[0], rootID: "doc2" };
         env.dock.syncEditors();
         await settle();
-        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "item", "h2"]);
         env.editors[0] = { ...env.editors[0], rootID: "doc1" };
         env.dock.syncEditors();
         await settle();
@@ -510,8 +512,12 @@ test("大纲增强 Dock：首次仅显示标题，按文档记住折叠并自动
         keep.click();
         await settle();
         assert.equal(keep.getAttribute("aria-pressed"), "true");
-        assert.deepEqual(ids(), ["h1", "h3", "h6", "h2"]);
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "item", "h2"]);
         assert.deepEqual(env.foldStates.doc1.collapsedIds, []);
+
+        env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!.click();
+        env.container.querySelector<HTMLButtonElement>('button[data-outline-toggle="h1"]')!.click();
+        assert.deepEqual(ids(), ["h1", "h3", "h6", "item", "h2"]);
 
         env.container.querySelector<HTMLButtonElement>('button[data-action="expand-all"]')!.click();
         assert.ok(ids().includes("item"));

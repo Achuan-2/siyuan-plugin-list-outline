@@ -134,10 +134,10 @@
 .outline-entry__rich {
     // 行内链接、引用等仅作展示；点击和拖动仍由大纲条目处理。
     > * { pointer-events: none; }
-    [data-type~="strong"] { color: var(--b3-protyle-inline-strong-color); font-weight: bold; }
-    [data-type~="em"] { color: var(--b3-protyle-inline-em-color); font-style: italic; }
-    [data-type~="s"] { color: var(--b3-protyle-inline-s-color); text-decoration: line-through; }
-    [data-type~="u"] { color: var(--b3-protyle-inline-u-color); border-bottom: 1px solid; }
+    [data-type~="strong"] { color:inherit; }
+    [data-type~="em"] {font-style: italic; }
+    [data-type~="s"] {  text-decoration: line-through; }
+    [data-type~="u"] { border-bottom: 1px solid; }
     [data-type~="mark"] { color: var(--b3-protyle-inline-mark-color); background: var(--b3-protyle-inline-mark-background); }
     [data-type~="tag"] { color: var(--b3-protyle-inline-tag-color); border-bottom: 1px solid; padding: 0 1px; }
     [data-type~="a"] { color: var(--b3-protyle-inline-link-color); }

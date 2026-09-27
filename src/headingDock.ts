@@ -296,7 +296,7 @@ export class HeadingOutlineDockView {
         this.currentEntryId = "";
         const foldState = editor ? this.options.getFoldState?.(editor.rootID) : undefined;
         this.collapsedEntryIds = new Set(foldState?.collapsedIds || []);
-        this.showListEntries = foldState?.showLists ?? false;
+        this.showListEntries = this.settings.headingListDepth > 0;
         this.body.replaceChildren();
         this.body.removeAttribute("data-loading");
         this.status.textContent = "";
@@ -432,10 +432,10 @@ export class HeadingOutlineDockView {
     applyFoldState(documentId: string, state: HeadingFoldState) {
         if (this.editor?.rootID !== documentId || this.disposed) return;
         const collapsed = new Set(state.collapsedIds);
-        if (this.showListEntries === state.showLists && collapsed.size === this.collapsedEntryIds.size &&
+        if (this.showListEntries === (this.settings.headingListDepth > 0) && collapsed.size === this.collapsedEntryIds.size &&
             [...collapsed].every(id => this.collapsedEntryIds.has(id))) return;
         this.collapsedEntryIds = collapsed;
-        this.showListEntries = state.showLists;
+        this.showListEntries = this.settings.headingListDepth > 0;
         this.render();
     }
 
