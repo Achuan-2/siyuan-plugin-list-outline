@@ -1,3 +1,21 @@
+.list-outline-settings-dialog {
+    .b3-dialog__container {
+        // 限制整个弹窗高度，留出窗口边距，让设置内容在正文区域滚动。
+        max-height: calc(100vh - 32px);
+        max-height: calc(100dvh - 32px);
+    }
+
+    .b3-dialog__header { flex-shrink: 0; }
+    .b3-dialog__body { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+    .list-outline-settings { flex: none; }
+
+    .config__tab-container {
+        // 设置面板使用弹窗正文的滚动条，避免原生面板的 100% 高度造成嵌套滚动。
+        height: auto;
+        overflow: visible;
+    }
+}
+
 .list-outline-floating {
     position: fixed;
     z-index: 8;

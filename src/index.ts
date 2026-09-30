@@ -356,6 +356,7 @@ export default class ListOutlinePlugin extends Plugin {
                 this.dialogs.delete(dialog);
             },
         });
+        dialog.element.classList.add("list-outline-settings-dialog");
         panel = new SettingPanel({
             target: dialog.element.querySelector(".list-outline-settings"),
             props: { plugin: this },
