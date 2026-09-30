@@ -12,12 +12,12 @@
   ],
   "disabledInPublish": true,
   "displayName": {
-    "default": "List Outline",
-    "zh-CN": "列表大纲"
+    "default": "Outline Enhance",
+    "zh-CN": "大纲增强"
   },
   "description": {
     "default": "Independent floating heading and list outlines, with single-line labels and per-list depth.",
-    "zh-CN": "可独立开关的悬浮大纲增强与列表大纲，文字单行省略，支持列表块独立层级设置。"
+    "zh-CN": "大纲支持显示列表、页签块层级，支持悬浮大纲"
   },
   "readme": {
     "default": "README_en.md",
@@ -27,6 +27,5 @@
     "custom": [
       "https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20241128221208-2024-11-28.png"
     ]
-  },
-  "keywords": ["list", "outline", "列表", "大纲"]
+  }
 }
