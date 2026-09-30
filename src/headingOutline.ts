@@ -49,6 +49,7 @@ interface OutlineDragState {
 }
 
 const DESKTOP_FLOATING_RIGHT_GAP = 48;
+const DESKTOP_FLOATING_BUTTON_TOP_OFFSET = 32;
 
 /** 数据与跳转流程参考思源 layout/dock/Outline.ts；面板使用插件自己的悬浮视图。 */
 export class HeadingOutlineController {
@@ -749,8 +750,10 @@ export class HeadingOutlineController {
         const left = Math.max(8, rect.left);
         const right = Math.min(window.innerWidth - 8,
             rect.right - 6 - (this.mobile ? 0 : DESKTOP_FLOATING_RIGHT_GAP));
-        let top = Math.max(8, rect.top + 12);
-        if (this.mobile) top = this.getMobileTop(viewport, top);
+        let viewportTop = Math.max(8, rect.top + 12);
+        if (this.mobile) viewportTop = this.getMobileTop(viewport, viewportTop);
+        // 图标按钮及展开面板一起下移，标题高亮仍按编辑区顶部计算。
+        const top = viewportTop + (!this.mobile && this.iconMode ? DESKTOP_FLOATING_BUTTON_TOP_OFFSET : 0);
         const bottom = Math.min(window.innerHeight - 8, rect.bottom - 8);
         if (right <= left || bottom - top < (this.mobile ? 52 : 30)) { this.panel.hidden = true; return; }
         this.panel.hidden = false;
@@ -768,7 +771,7 @@ export class HeadingOutlineController {
         if (this.currentEntryId && this.entries.some(entry => entry.id === this.currentEntryId)) {
             setOutlineCurrent(this.body, this.currentEntryId);
         } else {
-            this.highlightFromViewport(top);
+            this.highlightFromViewport(viewportTop);
         }
     }
 
