@@ -11,11 +11,11 @@ export interface OutlineSettings {
 
 export const MAX_DEPTH = 20;
 export const getDefaultSettings = (): OutlineSettings => ({
-    enableListOutline: true,
+    enableListOutline: false,
     enableHeadingOutline: true,
-    enableHeadingDock: false,
-    headingOutlineDisplayMode: "compact",
-    headingListDepth: 0,
+    enableHeadingDock: true,
+    headingOutlineDisplayMode: "icon",
+    headingListDepth: 2,
     keepCurrentHeadingExpanded: false,
     listOutlineRequireChildren: false,
     defaultDepth: 3,
